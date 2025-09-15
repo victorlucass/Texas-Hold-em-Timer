@@ -69,6 +69,12 @@ const initialBlindSchedule: BlindLevel[] = [
   { id: 8, smallBlind: 500, bigBlind: 1000, ante: 100 },
 ];
 
+const initialPlayers: Player[] = [
+    {id: 1, name: 'Jogador 1', balance: 0},
+    {id: 2, name: 'Jogador 2', balance: 0}
+];
+
+
 const formatTime = (seconds: number): string => {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
@@ -102,10 +108,7 @@ export default function PokerTimer() {
   const [totalSeconds, setTotalSeconds] = useState(roundLength * 60);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [prizePool, setPrizePool] = useState(0);
-  const [players, setPlayers] = useState<Player[]>([
-    {id: 1, name: 'Jogador 1', balance: 0},
-    {id: 2, name: 'Jogador 2', balance: 0}
-  ]);
+  const [players, setPlayers] = useState<Player[]>(initialPlayers);
   const [buyIn, setBuyIn] = useState(20);
   const [currentWinner, setCurrentWinner] = useState<Player | null>(null);
   const [roundHistory, setRoundHistory] = useState<RoundWinner[]>([]);
@@ -267,10 +270,15 @@ export default function PokerTimer() {
     }
   };
 
-  const resetTournament = () => {
-    setPlayers(players.map(p => ({...p, balance: 0})));
+  const finishTournament = () => {
+    resetTimer();
+    setBlindSchedule(initialBlindSchedule);
+    setPlayers(initialPlayers);
+    setBuyIn(20);
+    tournamentDetailsForm.reset({ buyIn: 20 });
     setRoundHistory([]);
-    toast({ title: 'Torneio Reiniciado!', description: 'Os saldos foram zerados.' });
+    setCurrentWinner(null);
+    toast({ title: 'Torneio Finalizado!', description: 'Todos os dados foram reiniciados.' });
   }
 
   const getSettlement = () => {
@@ -514,7 +522,7 @@ export default function PokerTimer() {
                  {roundHistory.length > 0 && (
                     <Dialog>
                         <DialogTrigger asChild>
-                            <Button variant="destructive"><Calculator className="mr-2"/> Encerrar e Acertar Contas</Button>
+                            <Button variant="outline"><Calculator className="mr-2"/> Acertar Contas</Button>
                         </DialogTrigger>
                         <DialogContent>
                             <DialogHeader>
@@ -546,10 +554,13 @@ export default function PokerTimer() {
                                 </div>
                             </div>
                             <DialogFooter>
-                                <Button onClick={resetTournament}>Reiniciar Torneio</Button>
+                                <Button onClick={finishTournament} variant="destructive">Finalizar e Reiniciar Torneio</Button>
                             </DialogFooter>
                         </DialogContent>
                     </Dialog>
+                 )}
+                 {roundHistory.length > 0 && (
+                    <Button onClick={finishTournament} variant="destructive">Finalizar Torneio</Button>
                  )}
             </div>
 
