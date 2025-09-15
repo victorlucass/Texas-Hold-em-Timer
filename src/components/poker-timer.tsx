@@ -19,7 +19,9 @@ import {
   History,
   DollarSign,
   Trophy,
-  Calculator
+  Calculator,
+  Maximize,
+  Minimize
 } from 'lucide-react';
 import React, { useCallback, useEffect, useState, useTransition, useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
@@ -112,6 +114,7 @@ export default function PokerTimer() {
   const [buyIn, setBuyIn] = useState(20);
   const [currentWinner, setCurrentWinner] = useState<Player | null>(null);
   const [roundHistory, setRoundHistory] = useState<RoundWinner[]>([]);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const [coachAnswer, setCoachAnswer] = useState('');
   const [isPending, startTransition] = useTransition();
@@ -302,6 +305,8 @@ export default function PokerTimer() {
     }
     return transactions;
   }
+  
+  const toggleFullscreen = () => setIsFullscreen(!isFullscreen);
 
   if (!isMounted) {
     return (
@@ -317,19 +322,37 @@ export default function PokerTimer() {
 
   return (
     <main
-      className="min-h-screen w-full bg-background bg-cover bg-center bg-no-repeat p-4 md:p-8 transition-all duration-500"
+      className={cn(
+        'min-h-screen w-full bg-background bg-cover bg-center bg-no-repeat p-4 md:p-8 transition-all duration-500',
+        isFullscreen && 'p-0 md:p-0'
+        )}
     >
-      <div className="mx-auto w-full max-w-7xl backdrop-blur-sm bg-black/30 p-4 rounded-lg">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-8">
+      <div className={cn(
+        'mx-auto w-full max-w-7xl backdrop-blur-sm bg-black/30 p-4 rounded-lg',
+        isFullscreen && 'max-w-full h-screen p-0 rounded-none backdrop-blur-none bg-background'
+        )}>
+        <div className={cn(
+            'grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-8',
+            isFullscreen && 'grid-cols-1 grid-rows-1 h-full gap-0 md:gap-0'
+            )}>
           {/* Timer e Blinds */}
-          <Card className="md:col-span-2 md:row-span-2 flex flex-col justify-between border-accent shadow-lg shadow-accent/10">
-            <CardHeader>
-              <CardTitle className="font-headline text-3xl text-accent">
-                Nível {currentLevelIndex + 1}
-              </CardTitle>
-              <CardDescription>
-                A rodada termina em:
-              </CardDescription>
+          <Card className={cn(
+            'md:col-span-2 md:row-span-2 flex flex-col justify-between border-accent shadow-lg shadow-accent/10',
+             isFullscreen && "col-span-1 row-span-1 md:col-span-1 md:row-span-1 h-full w-full border-0 rounded-none shadow-none"
+            )}>
+            <CardHeader className="flex flex-row justify-between items-center">
+              <div>
+                <CardTitle className="font-headline text-3xl text-accent">
+                  Nível {currentLevelIndex + 1}
+                </CardTitle>
+                <CardDescription>
+                  A rodada termina em:
+                </CardDescription>
+              </div>
+               <Button onClick={toggleFullscreen} variant="ghost" size="icon">
+                  {isFullscreen ? <Minimize /> : <Maximize />}
+                  <span className="sr-only">{isFullscreen ? 'Sair da Tela Cheia' : 'Tela Cheia'}</span>
+                </Button>
             </CardHeader>
             <CardContent className="flex flex-col items-center justify-center flex-grow">
               <div
@@ -376,7 +399,7 @@ export default function PokerTimer() {
           </Card>
 
           {/* Prize Pool e Jogadores */}
-          <Card className="border-primary shadow-lg shadow-primary/10">
+          <Card className={cn('border-primary shadow-lg shadow-primary/10', isFullscreen && 'hidden')}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 font-headline text-primary">
                 <Coins /> Gerenciamento do Jogo
@@ -411,7 +434,7 @@ export default function PokerTimer() {
                       )}
                     />
                     <div className="space-y-4 mt-4">
-                        <div>
+                        <FormItem>
                             <div className="flex justify-between items-center mb-2">
                                 <FormLabel>Jogadores ({players.length})</FormLabel>
                                 <Button size="sm" variant="ghost" onClick={addPlayer}><PlusCircle className="mr-2"/> Adicionar</Button>
@@ -419,14 +442,16 @@ export default function PokerTimer() {
                              <div className="space-y-2 max-h-32 overflow-y-auto pr-2">
                                 {players.map(player => (
                                     <div key={player.id} className="flex items-center gap-2">
-                                        <Input value={player.name} onChange={(e) => updatePlayerName(player.id, e.target.value)} className="flex-grow"/>
+                                        <FormControl>
+                                            <Input value={player.name} onChange={(e) => updatePlayerName(player.id, e.target.value)} className="flex-grow"/>
+                                        </FormControl>
                                         <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={() => removePlayer(player.id)}>
                                             <XCircle className="h-4 w-4"/>
                                         </Button>
                                     </div>
                                 ))}
                             </div>
-                        </div>
+                        </FormItem>
                    </div>
                 </form>
               </Form>
@@ -470,7 +495,7 @@ export default function PokerTimer() {
           </Card>
 
           {/* AI Poker Coach */}
-          <Card className="border-secondary shadow-lg">
+          <Card className={cn('border-secondary shadow-lg', isFullscreen && 'hidden')}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 font-headline text-gray-300">
                 <MessageCircleQuestion /> AI Poker Coach
@@ -502,7 +527,7 @@ export default function PokerTimer() {
           </Card>
         </div>
         
-        <div className="mt-4 md:mt-8 flex justify-between items-center flex-wrap gap-2">
+        <div className={cn('mt-4 md:mt-8 flex justify-between items-center flex-wrap gap-2', isFullscreen && 'hidden')}>
             <div className="flex gap-2">
                  {roundHistory.length > 0 && (
                     <Dialog>
