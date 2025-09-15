@@ -132,7 +132,7 @@ export default function PokerTimer() {
   
   const calculatePrizePool = useCallback(() => {
     if (players.length >= 2 && buyIn >= 1) {
-      setPrizePool(players.length * buyIn);
+      setPrizePool((players.length - 1) * buyIn);
     } else {
       setPrizePool(0);
     }
@@ -260,7 +260,7 @@ export default function PokerTimer() {
 
       toast({
         title: `Rodada ${roundNumber} Finalizada`,
-        description: `${currentWinner.name} venceu R$${prizePool.toLocaleString('pt-BR')}!`,
+        description: `${currentWinner.name} venceu R$${prizeForWinner.toLocaleString('pt-BR')}!`,
       });
 
       setCurrentWinner(null);
@@ -274,8 +274,8 @@ export default function PokerTimer() {
   }
 
   const getSettlement = () => {
-    const debtors = players.filter(p => p.balance < 0).sort((a, b) => a.balance - b.balance);
-    const creditors = players.filter(p => p.balance > 0).sort((a, b) => b.balance - a.balance);
+    const debtors = players.filter(p => p.balance < 0).map(p => ({...p})).sort((a, b) => a.balance - b.balance);
+    const creditors = players.filter(p => p.balance > 0).map(p => ({...p})).sort((a, b) => b.balance - a.balance);
     const transactions = [];
 
     let i = 0, j = 0;
@@ -289,8 +289,8 @@ export default function PokerTimer() {
       debtor.balance += amount;
       creditor.balance -= amount;
       
-      if (debtor.balance === 0) i++;
-      if (creditor.balance === 0) j++;
+      if (Math.abs(debtor.balance) < 0.01) i++;
+      if (Math.abs(creditor.balance) < 0.01) j++;
     }
     return transactions;
   }
@@ -402,26 +402,26 @@ export default function PokerTimer() {
                         </FormItem>
                       )}
                     />
+                    <div className="space-y-4 mt-4">
+                        <div>
+                            <div className="flex justify-between items-center mb-2">
+                                <FormLabel>Jogadores ({players.length})</FormLabel>
+                                <Button size="sm" variant="ghost" onClick={addPlayer}><PlusCircle className="mr-2"/> Adicionar</Button>
+                            </div>
+                             <div className="space-y-2 max-h-32 overflow-y-auto pr-2">
+                                {players.map(player => (
+                                    <div key={player.id} className="flex items-center gap-2">
+                                        <Input value={player.name} onChange={(e) => updatePlayerName(player.id, e.target.value)} className="flex-grow"/>
+                                        <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={() => removePlayer(player.id)}>
+                                            <XCircle className="h-4 w-4"/>
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                   </div>
                 </form>
               </Form>
-               <div className="space-y-4 mt-4">
-                    <div>
-                        <div className="flex justify-between items-center mb-2">
-                            <FormLabel>Jogadores ({players.length})</FormLabel>
-                            <Button size="sm" variant="ghost" onClick={addPlayer}><PlusCircle className="mr-2"/> Adicionar</Button>
-                        </div>
-                         <div className="space-y-2 max-h-32 overflow-y-auto pr-2">
-                            {players.map(player => (
-                                <div key={player.id} className="flex items-center gap-2">
-                                    <Input value={player.name} onChange={(e) => updatePlayerName(player.id, e.target.value)} className="flex-grow"/>
-                                    <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={() => removePlayer(player.id)}>
-                                        <XCircle className="h-4 w-4"/>
-                                    </Button>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-               </div>
               <div className="mt-6 text-center">
                 <p className="text-lg text-gray-400">Prêmio da Rodada</p>
                 <p className="font-headline text-5xl font-bold text-accent">
