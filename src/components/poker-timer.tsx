@@ -19,8 +19,8 @@ import {
   History,
   DollarSign
 } from 'lucide-react';
-import React, { useCallback, useEffect, useState, useTransition } from 'react';
-import { useFormState, useFormStatus } from 'react-dom';
+import React, { useCallback, useEffect, useState, useTransition, useActionState } from 'react';
+import { useFormStatus } from 'react-dom';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
@@ -111,7 +111,7 @@ export default function PokerTimer() {
   const [coachAnswer, setCoachAnswer] = useState('');
   const [isPending, startTransition] = useTransition();
 
-  const [formState, formAction] = useFormState(handlePokerCoach, { message: '', error: '' });
+  const [formState, formAction] = useActionState(handlePokerCoach, { message: '', error: '' });
 
   const settingsForm = useForm<z.infer<typeof SettingsSchema>>({
     resolver: zodResolver(SettingsSchema),
