@@ -1,11 +1,12 @@
 'use client';
 
-import type { BlindLevel } from '@/lib/types';
-import { handleTheming } from '@/lib/actions';
+import type { BlindLevel, Player } from '@/lib/types';
+import { handlePokerCoach } from '@/lib/actions';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   Coins,
   Copy,
+  MessageCircleQuestion,
   Pause,
   Play,
   RefreshCw,
@@ -13,6 +14,10 @@ import {
   Trash2,
   Users,
   Wand2,
+  PlusCircle,
+  XCircle,
+  History,
+  DollarSign
 } from 'lucide-react';
 import React, { useCallback, useEffect, useState, useTransition } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
@@ -48,6 +53,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Skeleton } from './ui/skeleton';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from './ui/dialog';
 
 const initialBlindSchedule: BlindLevel[] = [
   { id: 1, smallBlind: 25, bigBlind: 50, ante: 0 },
@@ -67,19 +73,19 @@ const formatTime = (seconds: number): string => {
 };
 
 const PrizePoolSchema = z.object({
-  players: z.coerce.number().min(2, 'At least 2 players required'),
-  buyIn: z.coerce.number().min(1, 'Buy-in must be at least 1'),
+  players: z.coerce.number().min(2, 'São necessários pelo menos 2 jogadores'),
+  buyIn: z.coerce.number().min(1, 'O Buy-in deve ser de pelo menos 1'),
 });
 
 const SettingsSchema = z.object({
-  roundLength: z.coerce.number().min(1, 'Round length must be at least 1 minute'),
+  roundLength: z.coerce.number().min(1, 'A duração da rodada deve ser de pelo menos 1 minuto'),
 });
 
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
     <Button type="submit" disabled={pending} className="w-full bg-accent text-accent-foreground hover:bg-accent/90">
-      {pending ? 'Generating...' : 'Generate Background'}
+      {pending ? 'Pensando...' : 'Perguntar à IA'}
       <Wand2 className="ml-2 h-4 w-4" />
     </Button>
   );
@@ -94,16 +100,18 @@ export default function PokerTimer() {
   const [totalSeconds, setTotalSeconds] = useState(roundLength * 60);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [prizePool, setPrizePool] = useState(0);
+  const [players, setPlayers] = useState<Player[]>([
+    {id: 1, name: 'Jogador 1'},
+    {id: 2, name: 'Jogador 2'}
+  ]);
+  const [buyIn, setBuyIn] = useState(20);
+  const [winner, setWinner] = useState<Player | null>(null);
+  const [transactionHistory, setTransactionHistory] = useState<string[]>([]);
 
-  const [backgroundImage, setBackgroundImage] = useState<string>('');
+  const [coachAnswer, setCoachAnswer] = useState('');
   const [isPending, startTransition] = useTransition();
 
-  const [formState, formAction] = useFormState(handleTheming, { message: '', error: '' });
-
-  const prizePoolForm = useForm<z.infer<typeof PrizePoolSchema>>({
-    resolver: zodResolver(PrizePoolSchema),
-    defaultValues: { players: 10, buyIn: 20 },
-  });
+  const [formState, formAction] = useFormState(handlePokerCoach, { message: '', error: '' });
 
   const settingsForm = useForm<z.infer<typeof SettingsSchema>>({
     resolver: zodResolver(SettingsSchema),
@@ -113,27 +121,28 @@ export default function PokerTimer() {
   useEffect(() => {
     setIsMounted(true);
     setTotalSeconds(roundLength * 60);
-    calculatePrizePool(prizePoolForm.getValues());
+    calculatePrizePool(players.length, buyIn);
   }, []);
-
-  const calculatePrizePool = (values: z.infer<typeof PrizePoolSchema>) => {
-    const { players, buyIn } = values;
-    if (players >= 2 && buyIn >= 1) {
-      setPrizePool(players * buyIn);
+  
+  const calculatePrizePool = (numPlayers: number, buyInAmount: number) => {
+    if (numPlayers >= 2 && buyInAmount >= 1) {
+      setPrizePool(numPlayers * buyInAmount);
+    } else {
+      setPrizePool(0);
     }
   };
 
-  prizePoolForm.watch(calculatePrizePool);
+  useEffect(() => {
+    calculatePrizePool(players.length, buyIn);
+  }, [players, buyIn]);
+
 
   useEffect(() => {
     if (!formState.error && !formState.message) return;
     if (formState.error) {
-      toast({ variant: 'destructive', title: 'Error', description: formState.error });
-    } else {
-      toast({ title: 'Success', description: formState.message });
-      if (formState.theme?.backgroundImage) {
-        setBackgroundImage(formState.theme.backgroundImage);
-      }
+      toast({ variant: 'destructive', title: 'Erro', description: formState.error });
+    } else if (formState.answer) {
+        setCoachAnswer(formState.answer);
     }
   }, [formState, toast]);
 
@@ -142,8 +151,8 @@ export default function PokerTimer() {
       setCurrentLevelIndex((prev) => prev + 1);
       setTotalSeconds(roundLength * 60);
     } else {
-      setIsTimerRunning(false); // Stop timer at the end of the schedule
-      toast({ title: 'Tournament End', description: 'Final blind level reached.' });
+      setIsTimerRunning(false);
+      toast({ title: 'Fim do Torneio', description: 'Último nível de blind alcançado.' });
     }
   }, [currentLevelIndex, blindSchedule.length, roundLength, toast]);
 
@@ -160,7 +169,11 @@ export default function PokerTimer() {
   }, [isTimerRunning, totalSeconds, levelUp]);
 
   const toggleTimer = () => setIsTimerRunning((prev) => !prev);
-  const resetTimer = () => setTotalSeconds(roundLength * 60);
+  const resetTimer = () => {
+    setTotalSeconds(roundLength * 60);
+    setCurrentLevelIndex(0);
+    setIsTimerRunning(false);
+  }
 
   const currentBlind = blindSchedule[currentLevelIndex];
   const nextBlind = currentLevelIndex < blindSchedule.length - 1 ? blindSchedule[currentLevelIndex + 1] : null;
@@ -168,7 +181,7 @@ export default function PokerTimer() {
   const handleSettingsSave = (values: z.infer<typeof SettingsSchema>) => {
     setRoundLength(values.roundLength);
     setTotalSeconds(values.roundLength * 60);
-    toast({ description: 'Settings saved!' });
+    toast({ description: 'Configurações salvas!' });
   };
   
   const addBlindLevel = () => {
@@ -192,11 +205,40 @@ export default function PokerTimer() {
 
   const removeBlindLevel = (id: number) => {
     if (blindSchedule.length <= 1) {
-        toast({variant: 'destructive', description: "You must have at least one blind level."});
+        toast({variant: 'destructive', description: "Você deve ter pelo menos um nível de blind."});
         return;
     }
     setBlindSchedule(blindSchedule.filter((level) => level.id !== id));
   };
+
+  const addPlayer = () => {
+    const newPlayer: Player = {
+        id: (players.length > 0 ? Math.max(...players.map(p => p.id)) : 0) + 1,
+        name: `Jogador ${players.length + 1}`
+    };
+    setPlayers([...players, newPlayer]);
+  };
+
+  const updatePlayerName = (id: number, name: string) => {
+    setPlayers(players.map(p => p.id === id ? {...p, name} : p));
+  };
+
+  const removePlayer = (id: number) => {
+    if (players.length <= 2) {
+        toast({variant: 'destructive', description: "O torneio precisa de pelo menos 2 jogadores."});
+        return;
+    }
+    setPlayers(players.filter(p => p.id !== id));
+  }
+  
+  const handleDeclareWinner = () => {
+    if (winner) {
+      const losers = players.filter(p => p.id !== winner.id);
+      const transaction = `${losers.map(p => p.name).join(', ')} transferem R$${buyIn.toLocaleString()} cada para ${winner.name}.`;
+      setTransactionHistory([transaction, ...transactionHistory]);
+      toast({ title: 'Transação registrada!', description: transaction });
+    }
+  }
 
   if (!isMounted) {
     return (
@@ -213,18 +255,17 @@ export default function PokerTimer() {
   return (
     <main
       className="min-h-screen w-full bg-background bg-cover bg-center bg-no-repeat p-4 md:p-8 transition-all duration-500"
-      style={{ backgroundImage: backgroundImage ? `url(${backgroundImage})` : 'none' }}
     >
       <div className="mx-auto w-full max-w-7xl backdrop-blur-sm bg-black/30 p-4 rounded-lg">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-8">
-          {/* Timer and Blinds */}
+          {/* Timer e Blinds */}
           <Card className="md:col-span-2 md:row-span-2 flex flex-col justify-between border-accent shadow-lg shadow-accent/10">
             <CardHeader>
               <CardTitle className="font-headline text-3xl text-accent">
-                Level {currentLevelIndex + 1}
+                Nível {currentLevelIndex + 1}
               </CardTitle>
               <CardDescription>
-                Round ends in:
+                A rodada termina em:
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col items-center justify-center flex-grow">
@@ -238,7 +279,7 @@ export default function PokerTimer() {
               </div>
               <div className="mt-8 flex w-full justify-around text-center">
                 <div>
-                  <h3 className="text-lg text-gray-400">Current Blinds</h3>
+                  <h3 className="text-lg text-gray-400">Blinds Atuais</h3>
                   <p className="font-headline text-2xl md:text-4xl text-gray-200">
                     {currentBlind.smallBlind}/{currentBlind.bigBlind}
                   </p>
@@ -248,7 +289,7 @@ export default function PokerTimer() {
                 </div>
                 {nextBlind && (
                   <div>
-                    <h3 className="text-lg text-gray-400">Next Blinds</h3>
+                    <h3 className="text-lg text-gray-400">Próximos Blinds</h3>
                     <p className="font-headline text-2xl md:text-4xl text-gray-200">
                       {nextBlind.smallBlind}/{nextBlind.bigBlind}
                     </p>
@@ -262,102 +303,146 @@ export default function PokerTimer() {
             <CardFooter className="flex justify-center gap-4">
               <Button onClick={toggleTimer} variant="default" size="lg" className="bg-accent text-accent-foreground hover:bg-accent/90 w-32">
                 {isTimerRunning ? <Pause className="mr-2" /> : <Play className="mr-2" />}
-                {isTimerRunning ? 'Pause' : 'Start'}
+                {isTimerRunning ? 'Pausar' : 'Iniciar'}
               </Button>
               <Button onClick={resetTimer} variant="outline" size="lg" className="w-32">
                 <RefreshCw className="mr-2" />
-                Reset
+                Reiniciar
               </Button>
             </CardFooter>
           </Card>
 
-          {/* Prize Pool */}
+          {/* Prize Pool e Jogadores */}
           <Card className="border-primary shadow-lg shadow-primary/10">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 font-headline text-primary">
-                <Coins /> Prize Pool
+                <Coins /> Premiação Total
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <Form {...prizePoolForm}>
-                <form className="space-y-4">
-                  <FormField
-                    control={prizePoolForm.control}
-                    name="players"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Number of Players</FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <Users className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                            <Input type="number" placeholder="e.g., 10" {...field} className="pl-10" />
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={prizePoolForm.control}
-                    name="buyIn"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Buy-in Amount</FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
-                            <Input type="number" placeholder="e.g., 20" {...field} className="pl-8" />
-                          </div>
-                        </FormControl>
-                         <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </form>
-              </Form>
+               <div className="space-y-4">
+                    <div>
+                        <FormLabel>Valor do Buy-in</FormLabel>
+                        <div className="relative mt-2">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">R$</span>
+                            <Input type="number" value={buyIn} onChange={e => setBuyIn(parseInt(e.target.value) || 0)} placeholder="ex: 20" className="pl-10" />
+                        </div>
+                    </div>
+                    <div>
+                        <div className="flex justify-between items-center mb-2">
+                            <FormLabel>Jogadores ({players.length})</FormLabel>
+                            <Button size="sm" variant="ghost" onClick={addPlayer}><PlusCircle className="mr-2"/> Adicionar</Button>
+                        </div>
+                         <div className="space-y-2 max-h-32 overflow-y-auto pr-2">
+                            {players.map(player => (
+                                <div key={player.id} className="flex items-center gap-2">
+                                    <Input value={player.name} onChange={(e) => updatePlayerName(player.id, e.target.value)} className="flex-grow"/>
+                                    <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={() => removePlayer(player.id)}>
+                                        <XCircle className="h-4 w-4"/>
+                                    </Button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+               </div>
               <div className="mt-6 text-center">
-                <p className="text-lg text-gray-400">Winner Takes All</p>
+                <p className="text-lg text-gray-400">O Vencedor Leva</p>
                 <p className="font-headline text-5xl font-bold text-accent">
-                  ${prizePool.toLocaleString()}
+                  R$ {prizePool.toLocaleString('pt-BR')}
                 </p>
               </div>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button className="w-full mt-4" disabled={players.length < 2}>
+                    <DollarSign className="mr-2"/> Declarar Vencedor e Pagamentos
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Declarar Vencedor</DialogTitle>
+                    <DialogDescription>
+                      Selecione o vencedor para registrar a transação de pagamento.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid grid-cols-2 gap-2 my-4">
+                    {players.map(p => (
+                      <Button key={p.id} variant={winner?.id === p.id ? 'default' : 'outline'} onClick={() => setWinner(p)}>
+                        {p.name}
+                      </Button>
+                    ))}
+                  </div>
+                  {winner && (
+                    <div className="text-center p-2 bg-muted rounded-md">
+                        <p>Os outros jogadores devem pagar R${buyIn.toLocaleString('pt-BR')} para <strong>{winner.name}</strong>.</p>
+                    </div>
+                  )}
+                  <DialogFooter>
+                    <Button onClick={handleDeclareWinner} disabled={!winner}>Confirmar e Registrar</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </CardContent>
           </Card>
 
-          {/* Theming Tool */}
+          {/* AI Poker Coach */}
           <Card className="border-secondary shadow-lg">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 font-headline text-gray-300">
-                <Wand2 /> AI Theming
+                <MessageCircleQuestion /> AI Poker Coach
               </CardTitle>
               <CardDescription>
-                Describe a theme to generate a custom background.
+                Tem alguma dúvida sobre poker? Pergunte ao nosso especialista de IA.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <form action={formAction}>
+              <form action={(formData) => {
+                setCoachAnswer('');
+                formAction(formData);
+              }}>
                 <Textarea
-                  name="themePreferences"
-                  placeholder="e.g., 'A classic, dimly lit poker room with green felt tables and whiskey glasses' or 'A futuristic, neon-lit casino on Mars'."
+                  name="question"
+                  placeholder="Ex: 'O que é um 'straddle'?' ou 'Qual a ordem de força das mãos no poker?'"
                   className="mb-4"
                   rows={4}
                 />
                 <SubmitButton />
               </form>
+              {isPending && <p className="mt-4 text-sm text-muted-foreground">Aguardando resposta da IA...</p>}
+              {coachAnswer && (
+                <div className="mt-4 p-4 bg-muted/50 rounded-lg">
+                  <p className="text-sm">{coachAnswer}</p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
         
-        <div className="mt-4 md:mt-8 flex justify-end">
+        <div className="mt-4 md:mt-8 flex justify-between items-center">
+            {transactionHistory.length > 0 && (
+                <Dialog>
+                    <DialogTrigger asChild>
+                        <Button variant="outline"><History className="mr-2"/> Histórico de Pagamentos</Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Histórico de Pagamentos</DialogTitle>
+                        </DialogHeader>
+                        <ul className="space-y-2 max-h-64 overflow-y-auto">
+                           {transactionHistory.map((t, i) => <li key={i} className="text-sm p-2 bg-muted rounded-md">{t}</li>)}
+                        </ul>
+                    </DialogContent>
+                </Dialog>
+            )}
+            <div className="flex-grow"></div>
             <Sheet>
               <SheetTrigger asChild>
-                  <Button variant="secondary"><Settings className="mr-2" /> Tournament Settings</Button>
+                  <Button variant="secondary"><Settings className="mr-2" /> Configurações do Torneio</Button>
               </SheetTrigger>
               <SheetContent className="w-full md:max-w-md">
                 <SheetHeader>
-                  <SheetTitle>Tournament Settings</SheetTitle>
+                  <SheetTitle>Configurações do Torneio</SheetTitle>
                   <SheetDescription>
-                    Configure the timer and blind structure for your tournament.
+                    Configure o timer e a estrutura de blinds para o seu torneio.
                   </SheetDescription>
                 </SheetHeader>
                 <div className="py-4 space-y-8">
@@ -368,7 +453,7 @@ export default function PokerTimer() {
                           name="roundLength"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Round Length (minutes)</FormLabel>
+                              <FormLabel>Duração da Rodada (minutos)</FormLabel>
                               <FormControl>
                                 <Input type="number" {...field} />
                               </FormControl>
@@ -376,12 +461,12 @@ export default function PokerTimer() {
                             </FormItem>
                           )}
                         />
-                      <Button type="submit">Save Settings</Button>
+                      <Button type="submit">Salvar Configurações</Button>
                     </form>
                   </Form>
                   
                   <div>
-                    <h3 className="text-lg font-medium mb-2">Blind Schedule</h3>
+                    <h3 className="text-lg font-medium mb-2">Estrutura de Blinds</h3>
                     <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-2">
                         {blindSchedule.map((level, index) => (
                           <div key={level.id} className="grid grid-cols-12 gap-2 items-center">
@@ -395,7 +480,7 @@ export default function PokerTimer() {
                           </div>
                         ))}
                     </div>
-                     <Button variant="outline" className="mt-4 w-full" onClick={addBlindLevel}>Add Level</Button>
+                     <Button variant="outline" className="mt-4 w-full" onClick={addBlindLevel}>Adicionar Nível</Button>
                   </div>
                 </div>
               </SheetContent>

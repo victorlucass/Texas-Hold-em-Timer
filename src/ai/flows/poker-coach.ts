@@ -31,7 +31,7 @@ const prompt = ai.definePrompt({
   name: 'pokerCoachPrompt',
   input: {schema: PokerCoachInputSchema},
   output: {schema: PokerCoachOutputSchema},
-  prompt: `Você é um especialista em poker Texas Hold'em. Sua tarefa é responder a perguntas sobre regras, estratégias e etiqueta do jogo de forma clara e concisa.
+  prompt: `Você é um especialista em poker Texas Hold'em. Sua tarefa é responder a perguntas sobre regras, estratégias e etiqueta do jogo de forma clara e concisa em Português do Brasil.
 
 Pergunta do usuário: {{{question}}}
 

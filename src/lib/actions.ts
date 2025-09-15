@@ -1,25 +1,25 @@
 'use server';
 
-import { generateTheme, type GenerateThemeOutput } from '@/ai/flows/generate-theming';
+import { askPokerCoach, type PokerCoachOutput } from '@/ai/flows/poker-coach';
 
-export async function handleTheming(
+export async function handlePokerCoach(
   prevState: any,
   formData: FormData
-): Promise<{ message: string; theme?: GenerateThemeOutput; error?: string }> {
-  const themePreferences = formData.get('themePreferences') as string;
+): Promise<{ message: string; answer?: string; error?: string }> {
+  const question = formData.get('question') as string;
 
-  if (!themePreferences || themePreferences.trim().length < 10) {
-    return { message: '', error: 'Please provide a more detailed description for the theme.' };
+  if (!question || question.trim().length < 5) {
+    return { message: '', error: 'Por favor, faça uma pergunta mais detalhada.' };
   }
 
   try {
-    const theme = await generateTheme({ themePreferences });
-    if (!theme.backgroundImage) {
-        return { message: '', error: 'AI could not generate an image. Please try a different prompt.' };
+    const response = await askPokerCoach({ question });
+    if (!response.answer) {
+        return { message: '', error: 'A IA não conseguiu gerar uma resposta. Por favor, tente uma pergunta diferente.' };
     }
-    return { message: 'Theme generated successfully!', theme };
+    return { message: 'Resposta gerada com sucesso!', answer: response.answer };
   } catch (error) {
     console.error(error);
-    return { message: '', error: 'Failed to generate theme. Please try again later.' };
+    return { message: '', error: 'Falha ao gerar a resposta. Por favor, tente novamente mais tarde.' };
   }
 }

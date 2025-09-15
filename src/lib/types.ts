@@ -4,3 +4,8 @@ export interface BlindLevel {
   bigBlind: number;
   ante: number;
 }
+
+export interface Player {
+  id: number;
+  name: string;
+}
