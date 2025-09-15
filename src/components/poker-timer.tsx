@@ -72,8 +72,7 @@ const formatTime = (seconds: number): string => {
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 };
 
-const PrizePoolSchema = z.object({
-  players: z.coerce.number().min(2, 'São necessários pelo menos 2 jogadores'),
+const TournamentDetailsSchema = z.object({
   buyIn: z.coerce.number().min(1, 'O Buy-in deve ser de pelo menos 1'),
 });
 
@@ -116,6 +115,11 @@ export default function PokerTimer() {
   const settingsForm = useForm<z.infer<typeof SettingsSchema>>({
     resolver: zodResolver(SettingsSchema),
     defaultValues: { roundLength },
+  });
+  
+  const tournamentDetailsForm = useForm<z.infer<typeof TournamentDetailsSchema>>({
+    resolver: zodResolver(TournamentDetailsSchema),
+    defaultValues: { buyIn: 20 },
   });
 
   useEffect(() => {
@@ -320,17 +324,39 @@ export default function PokerTimer() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-               <div className="space-y-4">
-                    <div>
-                        <FormLabel>Valor do Buy-in</FormLabel>
-                        <div className="relative mt-2">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">R$</span>
-                            <Input type="number" value={buyIn} onChange={e => setBuyIn(parseInt(e.target.value) || 0)} placeholder="ex: 20" className="pl-10" />
-                        </div>
-                    </div>
+              <Form {...tournamentDetailsForm}>
+                <form className="space-y-4">
+                   <FormField
+                      control={tournamentDetailsForm.control}
+                      name="buyIn"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Valor do Buy-in</FormLabel>
+                          <FormControl>
+                            <div className="relative mt-1">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">R$</span>
+                                <Input 
+                                    type="number" 
+                                    {...field}
+                                    onChange={e => {
+                                        const value = parseInt(e.target.value) || 0;
+                                        field.onChange(value);
+                                        setBuyIn(value);
+                                    }}
+                                    placeholder="ex: 20" 
+                                    className="pl-10" />
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                </form>
+              </Form>
+               <div className="space-y-4 mt-4">
                     <div>
                         <div className="flex justify-between items-center mb-2">
-                            <FormLabel>Jogadores ({players.length})</FormLabel>
+                            <label className="text-sm font-medium">Jogadores ({players.length})</label>
                             <Button size="sm" variant="ghost" onClick={addPlayer}><PlusCircle className="mr-2"/> Adicionar</Button>
                         </div>
                          <div className="space-y-2 max-h-32 overflow-y-auto pr-2">
