@@ -333,14 +333,14 @@ export default function PokerTimer() {
         )}>
         <div className={cn(
             'grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-8',
-            isFullscreen && 'grid-cols-1 grid-rows-1 h-full gap-0 md:gap-0'
+            isFullscreen && 'flex items-center justify-center h-full w-full'
             )}>
           {/* Timer e Blinds */}
           <Card className={cn(
             'md:col-span-2 md:row-span-2 flex flex-col justify-between border-accent shadow-lg shadow-accent/10',
-             isFullscreen && "col-span-1 row-span-1 md:col-span-1 md:row-span-1 h-full w-full border-0 rounded-none shadow-none"
+             isFullscreen && "h-full w-full border-0 rounded-none shadow-none"
             )}>
-            <CardHeader className="flex flex-row justify-between items-center">
+            <CardHeader className="flex flex-row justify-between items-start">
               <div>
                 <CardTitle className="font-headline text-3xl text-accent">
                   Nível {currentLevelIndex + 1}
@@ -363,7 +363,7 @@ export default function PokerTimer() {
               >
                 {formatTime(totalSeconds)}
               </div>
-              <div className="mt-8 flex w-full justify-around text-center">
+              <div className="mt-8 flex w-full flex-col md:flex-row items-center justify-around text-center gap-8 md:gap-0">
                 <div>
                   <h3 className="text-lg text-gray-400">Blinds Atuais</h3>
                   <p className="font-headline text-2xl md:text-4xl text-gray-200">
