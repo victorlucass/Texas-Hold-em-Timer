@@ -1,6 +1,6 @@
 'use client';
 
-import type { BlindLevel, Player } from '@/lib/types';
+import type { BlindLevel, Player, RoundWinner } from '@/lib/types';
 import { handlePokerCoach } from '@/lib/actions';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
@@ -17,7 +17,9 @@ import {
   PlusCircle,
   XCircle,
   History,
-  DollarSign
+  DollarSign,
+  Trophy,
+  Calculator
 } from 'lucide-react';
 import React, { useCallback, useEffect, useState, useTransition, useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
@@ -54,6 +56,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Skeleton } from './ui/skeleton';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from './ui/dialog';
+import { Separator } from './ui/separator';
 
 const initialBlindSchedule: BlindLevel[] = [
   { id: 1, smallBlind: 25, bigBlind: 50, ante: 0 },
@@ -100,12 +103,12 @@ export default function PokerTimer() {
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [prizePool, setPrizePool] = useState(0);
   const [players, setPlayers] = useState<Player[]>([
-    {id: 1, name: 'Jogador 1'},
-    {id: 2, name: 'Jogador 2'}
+    {id: 1, name: 'Jogador 1', balance: 0},
+    {id: 2, name: 'Jogador 2', balance: 0}
   ]);
   const [buyIn, setBuyIn] = useState(20);
-  const [winner, setWinner] = useState<Player | null>(null);
-  const [transactionHistory, setTransactionHistory] = useState<string[]>([]);
+  const [currentWinner, setCurrentWinner] = useState<Player | null>(null);
+  const [roundHistory, setRoundHistory] = useState<RoundWinner[]>([]);
 
   const [coachAnswer, setCoachAnswer] = useState('');
   const [isPending, startTransition] = useTransition();
@@ -125,20 +128,20 @@ export default function PokerTimer() {
   useEffect(() => {
     setIsMounted(true);
     setTotalSeconds(roundLength * 60);
-    calculatePrizePool(players.length, buyIn);
   }, []);
   
-  const calculatePrizePool = (numPlayers: number, buyInAmount: number) => {
-    if (numPlayers >= 2 && buyInAmount >= 1) {
-      setPrizePool(numPlayers * buyInAmount);
+  const calculatePrizePool = useCallback(() => {
+    if (players.length >= 2 && buyIn >= 1) {
+      setPrizePool(players.length * buyIn);
     } else {
       setPrizePool(0);
     }
-  };
+  }, [players.length, buyIn]);
+
 
   useEffect(() => {
-    calculatePrizePool(players.length, buyIn);
-  }, [players, buyIn]);
+    calculatePrizePool();
+  }, [players.length, buyIn, calculatePrizePool]);
 
 
   useEffect(() => {
@@ -218,7 +221,8 @@ export default function PokerTimer() {
   const addPlayer = () => {
     const newPlayer: Player = {
         id: (players.length > 0 ? Math.max(...players.map(p => p.id)) : 0) + 1,
-        name: `Jogador ${players.length + 1}`
+        name: `Jogador ${players.length + 1}`,
+        balance: 0,
     };
     setPlayers([...players, newPlayer]);
   };
@@ -236,12 +240,59 @@ export default function PokerTimer() {
   }
   
   const handleDeclareWinner = () => {
-    if (winner) {
-      const losers = players.filter(p => p.id !== winner.id);
-      const transaction = `${losers.map(p => p.name).join(', ')} transferem R$${buyIn.toLocaleString()} cada para ${winner.name}.`;
-      setTransactionHistory([transaction, ...transactionHistory]);
-      toast({ title: 'Transação registrada!', description: transaction });
+    if (currentWinner) {
+      const roundNumber = roundHistory.length + 1;
+      const prizeForWinner = (players.length - 1) * buyIn;
+
+      setPlayers(
+        players.map((p) => {
+          if (p.id === currentWinner.id) {
+            return { ...p, balance: p.balance + prizeForWinner };
+          }
+          return { ...p, balance: p.balance - buyIn };
+        })
+      );
+
+      setRoundHistory([
+        ...roundHistory,
+        { round: roundNumber, winnerName: currentWinner.name },
+      ]);
+
+      toast({
+        title: `Rodada ${roundNumber} Finalizada`,
+        description: `${currentWinner.name} venceu R$${prizePool.toLocaleString('pt-BR')}!`,
+      });
+
+      setCurrentWinner(null);
     }
+  };
+
+  const resetTournament = () => {
+    setPlayers(players.map(p => ({...p, balance: 0})));
+    setRoundHistory([]);
+    toast({ title: 'Torneio Reiniciado!', description: 'Os saldos foram zerados.' });
+  }
+
+  const getSettlement = () => {
+    const debtors = players.filter(p => p.balance < 0).sort((a, b) => a.balance - b.balance);
+    const creditors = players.filter(p => p.balance > 0).sort((a, b) => b.balance - a.balance);
+    const transactions = [];
+
+    let i = 0, j = 0;
+    while (i < debtors.length && j < creditors.length) {
+      const debtor = debtors[i];
+      const creditor = creditors[j];
+      const amount = Math.min(-debtor.balance, creditor.balance);
+      
+      transactions.push(`${debtor.name} deve pagar R$${amount.toLocaleString('pt-BR')} para ${creditor.name}.`);
+      
+      debtor.balance += amount;
+      creditor.balance -= amount;
+      
+      if (debtor.balance === 0) i++;
+      if (creditor.balance === 0) j++;
+    }
+    return transactions;
   }
 
   if (!isMounted) {
@@ -320,12 +371,12 @@ export default function PokerTimer() {
           <Card className="border-primary shadow-lg shadow-primary/10">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 font-headline text-primary">
-                <Coins /> Premiação Total
+                <Coins /> Gerenciamento do Jogo
               </CardTitle>
             </CardHeader>
             <CardContent>
               <Form {...tournamentDetailsForm}>
-                <form className="space-y-4">
+                <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
                    <FormField
                       control={tournamentDetailsForm.control}
                       name="buyIn"
@@ -356,7 +407,7 @@ export default function PokerTimer() {
                <div className="space-y-4 mt-4">
                     <div>
                         <div className="flex justify-between items-center mb-2">
-                            <label className="text-sm font-medium">Jogadores ({players.length})</label>
+                            <FormLabel>Jogadores ({players.length})</FormLabel>
                             <Button size="sm" variant="ghost" onClick={addPlayer}><PlusCircle className="mr-2"/> Adicionar</Button>
                         </div>
                          <div className="space-y-2 max-h-32 overflow-y-auto pr-2">
@@ -372,7 +423,7 @@ export default function PokerTimer() {
                     </div>
                </div>
               <div className="mt-6 text-center">
-                <p className="text-lg text-gray-400">O Vencedor Leva</p>
+                <p className="text-lg text-gray-400">Prêmio da Rodada</p>
                 <p className="font-headline text-5xl font-bold text-accent">
                   R$ {prizePool.toLocaleString('pt-BR')}
                 </p>
@@ -380,30 +431,30 @@ export default function PokerTimer() {
               <Dialog>
                 <DialogTrigger asChild>
                   <Button className="w-full mt-4" disabled={players.length < 2}>
-                    <DollarSign className="mr-2"/> Declarar Vencedor e Pagamentos
+                    <Trophy className="mr-2"/> Declarar Vencedor da Rodada
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Declarar Vencedor</DialogTitle>
+                    <DialogTitle>Vencedor da Rodada {roundHistory.length + 1}</DialogTitle>
                     <DialogDescription>
-                      Selecione o vencedor para registrar a transação de pagamento.
+                      Selecione o vencedor para registrar o resultado e iniciar a próxima rodada.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="grid grid-cols-2 gap-2 my-4">
                     {players.map(p => (
-                      <Button key={p.id} variant={winner?.id === p.id ? 'default' : 'outline'} onClick={() => setWinner(p)}>
+                      <Button key={p.id} variant={currentWinner?.id === p.id ? 'default' : 'outline'} onClick={() => setCurrentWinner(p)}>
                         {p.name}
                       </Button>
                     ))}
                   </div>
-                  {winner && (
+                  {currentWinner && (
                     <div className="text-center p-2 bg-muted rounded-md">
-                        <p>Os outros jogadores devem pagar R${buyIn.toLocaleString('pt-BR')} para <strong>{winner.name}</strong>.</p>
+                        <p><strong>{currentWinner.name}</strong> receberá R${prizePool.toLocaleString('pt-BR')} nesta rodada.</p>
                     </div>
                   )}
                   <DialogFooter>
-                    <Button onClick={handleDeclareWinner} disabled={!winner}>Confirmar e Registrar</Button>
+                    <Button onClick={handleDeclareWinner} disabled={!currentWinner}>Confirmar e Próxima Rodada</Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
@@ -443,23 +494,65 @@ export default function PokerTimer() {
           </Card>
         </div>
         
-        <div className="mt-4 md:mt-8 flex justify-between items-center">
-            {transactionHistory.length > 0 && (
-                <Dialog>
-                    <DialogTrigger asChild>
-                        <Button variant="outline"><History className="mr-2"/> Histórico de Pagamentos</Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                        <DialogHeader>
-                            <DialogTitle>Histórico de Pagamentos</DialogTitle>
-                        </DialogHeader>
-                        <ul className="space-y-2 max-h-64 overflow-y-auto">
-                           {transactionHistory.map((t, i) => <li key={i} className="text-sm p-2 bg-muted rounded-md">{t}</li>)}
-                        </ul>
-                    </DialogContent>
-                </Dialog>
-            )}
-            <div className="flex-grow"></div>
+        <div className="mt-4 md:mt-8 flex justify-between items-center flex-wrap gap-2">
+            <div className="flex gap-2">
+                 {roundHistory.length > 0 && (
+                    <Dialog>
+                        <DialogTrigger asChild>
+                            <Button variant="outline"><History className="mr-2"/> Histórico de Rodadas</Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                            <DialogHeader>
+                                <DialogTitle>Histórico de Rodadas</DialogTitle>
+                            </DialogHeader>
+                            <ul className="space-y-2 max-h-64 overflow-y-auto">
+                               {roundHistory.map((r, i) => <li key={i} className="text-sm p-2 bg-muted rounded-md"><strong>Rodada {r.round}:</strong> {r.winnerName} venceu.</li>)}
+                            </ul>
+                        </DialogContent>
+                    </Dialog>
+                )}
+                 {roundHistory.length > 0 && (
+                    <Dialog>
+                        <DialogTrigger asChild>
+                            <Button variant="destructive"><Calculator className="mr-2"/> Encerrar e Acertar Contas</Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                            <DialogHeader>
+                                <DialogTitle>Resumo Financeiro do Torneio</DialogTitle>
+                                <DialogDescription>
+                                    Abaixo está o balanço final e as transferências necessárias para acertar as contas.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <div className="space-y-4 my-4">
+                                <div>
+                                    <h3 className="font-bold mb-2">Balanço Final:</h3>
+                                    <ul className="space-y-1">
+                                        {players.map(p => (
+                                            <li key={p.id} className={cn("flex justify-between p-2 rounded", p.balance >= 0 ? 'bg-green-900/50' : 'bg-red-900/50')}>
+                                                <span>{p.name}</span>
+                                                <span className="font-mono">R$ {p.balance.toLocaleString('pt-BR')}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                                <Separator />
+                                <div>
+                                    <h3 className="font-bold mb-2">Transferências Sugeridas:</h3>
+                                     <ul className="space-y-2">
+                                        {getSettlement().map((t, i) => (
+                                            <li key={i} className="text-sm p-2 bg-muted rounded-md">{t}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            </div>
+                            <DialogFooter>
+                                <Button onClick={resetTournament}>Reiniciar Torneio</Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+                 )}
+            </div>
+
             <Sheet>
               <SheetTrigger asChild>
                   <Button variant="secondary"><Settings className="mr-2" /> Configurações do Torneio</Button>

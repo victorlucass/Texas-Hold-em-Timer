@@ -8,4 +8,10 @@ export interface BlindLevel {
 export interface Player {
   id: number;
   name: string;
+  balance: number;
+}
+
+export interface RoundWinner {
+  round: number;
+  winnerName: string;
 }
