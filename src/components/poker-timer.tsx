@@ -333,70 +333,75 @@ export default function PokerTimer() {
         )}>
         <div className={cn(
             'grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-8',
-            isFullscreen && 'flex items-center justify-center h-full w-full'
+            isFullscreen && 'h-full w-full'
             )}>
           {/* Timer e Blinds */}
-          <Card className={cn(
-            'md:col-span-2 md:row-span-2 flex flex-col justify-between border-accent shadow-lg shadow-accent/10',
-             isFullscreen && "h-full w-full border-0 rounded-none shadow-none"
-            )}>
-            <CardHeader className="flex flex-row justify-between items-start">
-              <div>
-                <CardTitle className="font-headline text-3xl text-accent">
-                  Nível {currentLevelIndex + 1}
-                </CardTitle>
-                <CardDescription>
-                  A rodada termina em:
-                </CardDescription>
-              </div>
-               <Button onClick={toggleFullscreen} variant="ghost" size="icon">
-                  {isFullscreen ? <Minimize /> : <Maximize />}
-                  <span className="sr-only">{isFullscreen ? 'Sair da Tela Cheia' : 'Tela Cheia'}</span>
-                </Button>
-            </CardHeader>
-            <CardContent className="flex flex-col items-center justify-center flex-grow">
-              <div
-                className={cn(
-                  'font-headline text-8xl md:text-9xl font-bold text-gray-100 transition-colors duration-500',
-                  totalSeconds <= 10 && totalSeconds > 0 && 'text-primary'
-                )}
-              >
-                {formatTime(totalSeconds)}
-              </div>
-              <div className="mt-8 flex w-full flex-col md:flex-row items-center justify-around text-center gap-8 md:gap-0">
+          <div className={cn(
+            'md:col-span-2 md:row-span-2',
+            isFullscreen && 'flex items-center justify-center h-full w-full'
+          )}>
+            <Card className={cn(
+              'flex flex-col justify-between border-accent shadow-lg shadow-accent/10 w-full h-full',
+              isFullscreen && "border-0 rounded-none shadow-none"
+              )}>
+              <CardHeader className="flex flex-row justify-between items-start">
                 <div>
-                  <h3 className="text-lg text-gray-400">Blinds Atuais</h3>
-                  <p className="font-headline text-2xl md:text-4xl text-gray-200">
-                    {currentBlind.smallBlind}/{currentBlind.bigBlind}
-                  </p>
-                  {currentBlind.ante > 0 && (
-                    <p className="text-md text-gray-400">Ante: {currentBlind.ante}</p>
-                  )}
+                  <CardTitle className="font-headline text-3xl text-accent">
+                    Nível {currentLevelIndex + 1}
+                  </CardTitle>
+                  <CardDescription>
+                    A rodada termina em:
+                  </CardDescription>
                 </div>
-                {nextBlind && (
+                <Button onClick={toggleFullscreen} variant="ghost" size="icon">
+                    {isFullscreen ? <Minimize /> : <Maximize />}
+                    <span className="sr-only">{isFullscreen ? 'Sair da Tela Cheia' : 'Tela Cheia'}</span>
+                  </Button>
+              </CardHeader>
+              <CardContent className="flex flex-col items-center justify-center flex-grow">
+                <div
+                  className={cn(
+                    'font-headline text-8xl md:text-9xl font-bold text-gray-100 transition-colors duration-500',
+                    totalSeconds <= 10 && totalSeconds > 0 && 'text-primary'
+                  )}
+                >
+                  {formatTime(totalSeconds)}
+                </div>
+                <div className="mt-8 flex w-full flex-col md:flex-row items-center justify-around text-center gap-8 md:gap-0">
                   <div>
-                    <h3 className="text-lg text-gray-400">Próximos Blinds</h3>
+                    <h3 className="text-lg text-gray-400">Blinds Atuais</h3>
                     <p className="font-headline text-2xl md:text-4xl text-gray-200">
-                      {nextBlind.smallBlind}/{nextBlind.bigBlind}
+                      {currentBlind.smallBlind}/{currentBlind.bigBlind}
                     </p>
-                    {nextBlind.ante > 0 && (
-                      <p className="text-md text-gray-400">Ante: {nextBlind.ante}</p>
+                    {currentBlind.ante > 0 && (
+                      <p className="text-md text-gray-400">Ante: {currentBlind.ante}</p>
                     )}
                   </div>
-                )}
-              </div>
-            </CardContent>
-            <CardFooter className="flex justify-center gap-4">
-              <Button onClick={toggleTimer} variant="default" size="lg" className="bg-accent text-accent-foreground hover:bg-accent/90 w-32">
-                {isTimerRunning ? <Pause className="mr-2" /> : <Play className="mr-2" />}
-                {isTimerRunning ? 'Pausar' : 'Iniciar'}
-              </Button>
-              <Button onClick={resetTimer} variant="outline" size="lg" className="w-32">
-                <RefreshCw className="mr-2" />
-                Reiniciar
-              </Button>
-            </CardFooter>
-          </Card>
+                  {nextBlind && (
+                    <div>
+                      <h3 className="text-lg text-gray-400">Próximos Blinds</h3>
+                      <p className="font-headline text-2xl md:text-4xl text-gray-200">
+                        {nextBlind.smallBlind}/{nextBlind.bigBlind}
+                      </p>
+                      {nextBlind.ante > 0 && (
+                        <p className="text-md text-gray-400">Ante: {nextBlind.ante}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+              <CardFooter className="flex justify-center gap-4">
+                <Button onClick={toggleTimer} variant="default" size="lg" className="bg-accent text-accent-foreground hover:bg-accent/90 w-32">
+                  {isTimerRunning ? <Pause className="mr-2" /> : <Play className="mr-2" />}
+                  {isTimerRunning ? 'Pausar' : 'Iniciar'}
+                </Button>
+                <Button onClick={resetTimer} variant="outline" size="lg" className="w-32">
+                  <RefreshCw className="mr-2" />
+                  Reiniciar
+                </Button>
+              </CardFooter>
+            </Card>
+          </div>
 
           {/* Prize Pool e Jogadores */}
           <Card className={cn('border-primary shadow-lg shadow-primary/10', isFullscreen && 'hidden')}>
