@@ -165,14 +165,14 @@ export default function PokerTimer() {
   
   const calculatePrizePool = useCallback(() => {
     const totalRebuys = players.reduce((acc, player) => acc + player.rebuys, 0);
-    const pool = (players.length * buyIn) + (totalRebuys * rebuyValue);
+    const pool = (players.length * buyIn) + totalRebuys;
     setPrizePool(pool);
-  }, [players, buyIn, rebuyValue]);
+  }, [players, buyIn]);
 
 
   useEffect(() => {
     calculatePrizePool();
-  }, [players, buyIn, rebuyValue, calculatePrizePool]);
+  }, [players, buyIn, calculatePrizePool]);
 
 
   useEffect(() => {
@@ -325,21 +325,24 @@ export default function PokerTimer() {
     setPlayers(players.filter(p => p.id !== id));
   }
 
-  const handleRebuy = (playerId: number) => {
-      setPlayers(players.map(p => {
-          if (p.id === playerId) {
-              return {...p, rebuys: p.rebuys + 1, balance: p.balance - rebuyValue};
-          }
-          return p;
-      }));
-      toast({description: `Rebuy de R$${rebuyValue} adicionado para ${players.find(p=>p.id === playerId)?.name}.`});
-  }
+  const handleRebuy = (playerId: number, amount: number) => {
+    setPlayers(
+      players.map((p) => {
+        if (p.id === playerId) {
+          return { ...p, rebuys: p.rebuys + amount };
+        }
+        return p;
+      })
+    );
+    const playerName = players.find((p) => p.id === playerId)?.name;
+    toast({ description: `Rebuy de R$${amount} adicionado para ${playerName}.` });
+  };
   
   const handleDeclareWinner = () => {
     if (currentWinner) {
       const roundNumber = roundHistory.length + 1;
       const totalRebuys = players.reduce((acc, p) => acc + p.rebuys, 0);
-      const prizeForWinner = (players.length * buyIn) + (totalRebuys * rebuyValue);
+      const prizeForWinner = (players.length * buyIn) + totalRebuys;
 
       // Reset rebuys for next round calculation
       const playersForNextRound = players.map(p => ({...p, rebuys: 0}));
@@ -382,7 +385,7 @@ export default function PokerTimer() {
   const getSettlement = () => {
     const playersWithFinalBalance = players.map(p => ({
         ...p,
-        balance: p.balance - (p.rebuys * rebuyValue) - buyIn,
+        balance: p.balance - (p.rebuys) - buyIn,
     }))
 
     const debtors = playersWithFinalBalance.filter(p => p.balance < 0).map(p => ({...p})).sort((a, b) => a.balance - b.balance);
@@ -571,16 +574,21 @@ export default function PokerTimer() {
                                 <FormLabel>Jogadores ({players.length})</FormLabel>
                                 <Button size="sm" variant="ghost" onClick={addPlayer}><PlusCircle className="mr-2"/> Adicionar</Button>
                             </div>
-                             <div className="space-y-2 max-h-32 overflow-y-auto pr-2">
+                             <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
                                 {players.map(player => (
-                                    <div key={player.id} className="flex items-center gap-2">
-                                        <FormControl>
-                                            <Input value={player.name} onChange={(e) => updatePlayerName(player.id, e.target.value)} className="flex-grow"/>
-                                        </FormControl>
-                                        <Button variant="outline" size="sm" onClick={() => handleRebuy(player.id)}>Rebuy ({player.rebuys})</Button>
-                                        <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={() => removePlayer(player.id)}>
-                                            <XCircle className="h-4 w-4"/>
-                                        </Button>
+                                    <div key={player.id} className="flex flex-col gap-2 p-2 border rounded-md">
+                                        <div className="flex items-center gap-2">
+                                          <FormControl>
+                                              <Input value={player.name} onChange={(e) => updatePlayerName(player.id, e.target.value)} className="flex-grow"/>
+                                          </FormControl>
+                                          <Button variant="ghost" size="icon" className="text-muted-foreground shrink-0" onClick={() => removePlayer(player.id)}>
+                                              <XCircle className="h-4 w-4"/>
+                                          </Button>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <Button variant="outline" size="sm" className="w-full" onClick={() => handleRebuy(player.id, rebuyValue)}>Rebuy (R${rebuyValue})</Button>
+                                          <Button variant="outline" size="sm" className="w-full" onClick={() => handleRebuy(player.id, rebuyValue * 2)}>Rebuy Duplo (R${rebuyValue * 2})</Button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
