@@ -9,7 +9,7 @@ export interface Player {
   id: number;
   name: string;
   balance: number;
-  rebuys: number;
+  rebuys: number; // This will now store the total monetary value of rebuys
 }
 
 export interface RoundWinner {

@@ -96,14 +96,6 @@ const SettingsSchema = z.object({
   roundLength: z.coerce.number().min(1, 'A duração da rodada deve ser de pelo menos 1 minuto'),
 });
 
-const BlindGenerationSchema = z.object({
-  totalChips: z.coerce.number().min(1, 'O total de fichas deve ser maior que zero.'),
-  startingSmallBlind: z.coerce.number().min(1, 'O Small Blind inicial deve ser maior que zero.'),
-  numLevels: z.coerce.number().min(5, 'O número de níveis deve ser pelo menos 5.').max(20, 'O número de níveis não pode exceder 20.'),
-  useRebuys: z.boolean().default(true),
-  rebuysPerPlayer: z.coerce.number().min(0).max(5).default(2)
-})
-
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
@@ -144,17 +136,6 @@ export default function PokerTimer() {
   const tournamentDetailsForm = useForm<z.infer<typeof TournamentDetailsSchema>>({
     resolver: zodResolver(TournamentDetailsSchema),
     defaultValues: { buyIn: 20, rebuyValue: 20 },
-  });
-
-  const blindGenerationForm = useForm<z.infer<typeof BlindGenerationSchema>>({
-      resolver: zodResolver(BlindGenerationSchema),
-      defaultValues: {
-          totalChips: 10000,
-          startingSmallBlind: 25,
-          numLevels: 12,
-          useRebuys: true,
-          rebuysPerPlayer: 2,
-      },
   });
 
   useEffect(() => {
@@ -258,50 +239,6 @@ export default function PokerTimer() {
     setBlindSchedule(blindSchedule.filter((level) => level.id !== id));
   };
 
-  const handleBlindGeneration = (values: z.infer<typeof BlindGenerationSchema>) => {
-    const { totalChips, startingSmallBlind, numLevels, useRebuys, rebuysPerPlayer } = values;
-    const numPlayers = players.length;
-
-    let effectiveTotalChips = totalChips;
-    if(useRebuys) {
-        const rebuyChips = (totalChips / numPlayers) * numPlayers * rebuysPerPlayer * 0.5; // Assume rebuy is half the starting stack
-        effectiveTotalChips += rebuyChips;
-    }
-    
-    const mFactorTarget = 10;
-    const averageStack = effectiveTotalChips / numPlayers;
-    const startingPot = startingSmallBlind + (startingSmallBlind * 2); // SB + BB
-    
-    let currentSmallBlind = startingSmallBlind;
-    const newSchedule: BlindLevel[] = [];
-
-    for (let i = 1; i <= numLevels; i++) {
-        const bigBlind = currentSmallBlind * 2;
-        let ante = 0;
-        
-        // Introduce antes later in the tournament, commonly when BB is around 1/20th of average stack
-        if (bigBlind > averageStack / 20 && i > 3) {
-            ante = Math.floor(bigBlind / 4 / 25) * 25 || 25; // Round to nearest 25
-        }
-        
-        newSchedule.push({
-            id: i,
-            smallBlind: currentSmallBlind,
-            bigBlind: bigBlind,
-            ante: ante,
-        });
-
-        // Increase blinds, more aggressively in later stages
-        const increaseFactor = i < numLevels / 2 ? 1.5 : 2;
-        let nextSmallBlind = Math.round((currentSmallBlind * increaseFactor) / 25) * 25;
-        if(nextSmallBlind <= currentSmallBlind) nextSmallBlind = currentSmallBlind + 25;
-        currentSmallBlind = nextSmallBlind;
-    }
-
-    setBlindSchedule(newSchedule);
-    toast({ title: "Estrutura de Blinds Gerada!", description: `${numLevels} níveis foram criados com sucesso.` });
-  };
-
   const addPlayer = () => {
     const newPlayer: Player = {
         id: (players.length > 0 ? Math.max(...players.map(p => p.id)) : 0) + 1,
@@ -328,7 +265,8 @@ export default function PokerTimer() {
     setPlayers(
       players.map((p) => {
         if (p.id === playerId) {
-          return { ...p, rebuys: p.rebuys + count };
+          // Here, 'rebuys' actually stores the monetary value of rebuys for prize pool calculation
+          return { ...p, rebuys: p.rebuys + (rebuyValue * count) };
         }
         return p;
       })
@@ -341,8 +279,9 @@ export default function PokerTimer() {
   const handleDeclareWinner = () => {
     if (currentWinner) {
       const roundNumber = roundHistory.length + 1;
-      const totalRebuysCount = players.reduce((acc, p) => acc + p.rebuys, 0);
-      const prizeForWinner = (players.length * buyIn) + (totalRebuysCount * rebuyValue);
+      
+      // prizePool is already calculated based on buyIns and rebuys
+      const prizeForWinner = prizePool;
 
       // Reset rebuys for next round calculation
       const playersForNextRound = players.map(p => ({...p, rebuys: 0}));
@@ -438,67 +377,69 @@ export default function PokerTimer() {
         )}
       >
         {isFullscreen ? (
-          <Card className="flex flex-col justify-between border-accent w-full h-full border-0 rounded-none shadow-none">
-            <CardHeader className="flex flex-row justify-between items-start">
-              <div>
-                <CardTitle className="font-headline text-3xl text-accent">
-                  Nível {currentLevelIndex + 1}
-                </CardTitle>
-                <CardDescription>A rodada termina em:</CardDescription>
-              </div>
-              <Button onClick={toggleFullscreen} variant="ghost" size="icon">
-                <Minimize />
-                <span className="sr-only">Sair da Tela Cheia</span>
-              </Button>
-            </CardHeader>
-            <CardContent className="flex flex-col items-center justify-center flex-grow">
-              <div
-                className={cn(
-                  'font-headline text-8xl md:text-9xl font-bold text-gray-100 transition-colors duration-500',
-                  totalSeconds <= 10 && totalSeconds > 0 && 'text-primary'
-                )}
-              >
-                {formatTime(totalSeconds)}
-              </div>
-              <div className="mt-8 flex w-full flex-col md:flex-row items-center justify-around text-center gap-8 md:gap-0">
+          <div className="w-full h-full flex items-center justify-center">
+            <Card className="flex flex-col justify-between border-accent w-full max-w-5xl border-0 rounded-none shadow-none bg-transparent">
+              <CardHeader className="flex flex-row justify-between items-start">
                 <div>
-                  <h3 className="text-lg text-gray-400">Blinds Atuais</h3>
-                  <p className="font-headline text-2xl md:text-4xl text-gray-200">
-                    {currentBlind.smallBlind}/{currentBlind.bigBlind}
-                  </p>
-                  {currentBlind.ante > 0 && (
-                    <p className="text-md text-gray-400">Ante: {currentBlind.ante}</p>
-                  )}
+                  <CardTitle className="font-headline text-3xl text-accent">
+                    Nível {currentLevelIndex + 1}
+                  </CardTitle>
+                  <CardDescription>A rodada termina em:</CardDescription>
                 </div>
-                {nextBlind && (
+                <Button onClick={toggleFullscreen} variant="ghost" size="icon">
+                  <Minimize />
+                  <span className="sr-only">Sair da Tela Cheia</span>
+                </Button>
+              </CardHeader>
+              <CardContent className="flex flex-col items-center justify-center flex-grow">
+                <div
+                  className={cn(
+                    'font-headline text-8xl md:text-9xl font-bold text-gray-100 transition-colors duration-500',
+                    totalSeconds <= 10 && totalSeconds > 0 && 'text-primary'
+                  )}
+                >
+                  {formatTime(totalSeconds)}
+                </div>
+                <div className="mt-8 flex w-full flex-col md:flex-row items-center justify-around text-center gap-8 md:gap-0">
                   <div>
-                    <h3 className="text-lg text-gray-400">Próximos Blinds</h3>
+                    <h3 className="text-lg text-gray-400">Blinds Atuais</h3>
                     <p className="font-headline text-2xl md:text-4xl text-gray-200">
-                      {nextBlind.smallBlind}/{nextBlind.bigBlind}
+                      {currentBlind.smallBlind}/{currentBlind.bigBlind}
                     </p>
-                    {nextBlind.ante > 0 && (
-                      <p className="text-md text-gray-400">Ante: {nextBlind.ante}</p>
+                    {currentBlind.ante > 0 && (
+                      <p className="text-md text-gray-400">Ante: {currentBlind.ante}</p>
                     )}
                   </div>
-                )}
-              </div>
-            </CardContent>
-            <CardFooter className="flex justify-center gap-4">
-              <Button
-                onClick={toggleTimer}
-                variant="default"
-                size="lg"
-                className="bg-accent text-accent-foreground hover:bg-accent/90 w-32"
-              >
-                {isTimerRunning ? <Pause className="mr-2" /> : <Play className="mr-2" />}
-                {isTimerRunning ? 'Pausar' : 'Iniciar'}
-              </Button>
-              <Button onClick={resetTimer} variant="outline" size="lg" className="w-32">
-                <RefreshCw className="mr-2" />
-                Reiniciar
-              </Button>
-            </CardFooter>
-          </Card>
+                  {nextBlind && (
+                    <div>
+                      <h3 className="text-lg text-gray-400">Próximos Blinds</h3>
+                      <p className="font-headline text-2xl md:text-4xl text-gray-200">
+                        {nextBlind.smallBlind}/{nextBlind.bigBlind}
+                      </p>
+                      {nextBlind.ante > 0 && (
+                        <p className="text-md text-gray-400">Ante: {nextBlind.ante}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+              <CardFooter className="flex justify-center gap-4">
+                <Button
+                  onClick={toggleTimer}
+                  variant="default"
+                  size="lg"
+                  className="bg-accent text-accent-foreground hover:bg-accent/90 w-32"
+                >
+                  {isTimerRunning ? <Pause className="mr-2" /> : <Play className="mr-2" />}
+                  {isTimerRunning ? 'Pausar' : 'Iniciar'}
+                </Button>
+                <Button onClick={resetTimer} variant="outline" size="lg" className="w-32">
+                  <RefreshCw className="mr-2" />
+                  Reiniciar
+                </Button>
+              </CardFooter>
+            </Card>
+          </div>
         ) : (
           <>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-8">
@@ -823,56 +764,6 @@ export default function PokerTimer() {
                           <Button type="submit">Salvar Configurações</Button>
                         </form>
                       </Form>
-                      <Separator/>
-                       <div>
-                        <h3 className="text-lg font-medium mb-4 flex items-center gap-2"><Sparkles className="text-accent"/> Gerador de Blinds Automático</h3>
-                         <Form {...blindGenerationForm}>
-                            <form onSubmit={blindGenerationForm.handleSubmit(handleBlindGeneration)} className="space-y-4">
-                               <FormField control={blindGenerationForm.control} name="totalChips" render={({field}) => (
-                                   <FormItem>
-                                       <FormLabel>Total de fichas em jogo (inicial)</FormLabel>
-                                       <FormControl><Input type="number" {...field} /></FormControl>
-                                       <FormMessage />
-                                   </FormItem>
-                               )} />
-                               <div className="grid grid-cols-2 gap-4">
-                                 <FormField control={blindGenerationForm.control} name="startingSmallBlind" render={({field}) => (
-                                     <FormItem>
-                                         <FormLabel>Small Blind Inicial</FormLabel>
-                                         <FormControl><Input type="number" {...field} /></FormControl>
-                                         <FormMessage />
-                                     </FormItem>
-                                 )} />
-                                  <FormField control={blindGenerationForm.control} name="numLevels" render={({field}) => (
-                                     <FormItem>
-                                         <FormLabel>Nº de Níveis</FormLabel>
-                                         <FormControl><Input type="number" {...field} /></FormControl>
-                                         <FormMessage />
-                                     </FormItem>
-                                 )} />
-                               </div>
-                               <FormField control={blindGenerationForm.control} name="useRebuys" render={({field}) => (
-                                   <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
-                                       <div className="space-y-0.5">
-                                           <FormLabel>Considerar Rebuys?</FormLabel>
-                                           <FormDescription>Incluir até {blindGenerationForm.watch('rebuysPerPlayer')} rebuys por jogador no cálculo.</FormDescription>
-                                       </div>
-                                       <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                                   </FormItem>
-                               )} />
-                               {blindGenerationForm.watch('useRebuys') && (
-                                    <FormField control={blindGenerationForm.control} name="rebuysPerPlayer" render={({field}) => (
-                                        <FormItem>
-                                            <FormLabel>Rebuys por Jogador (máx)</FormLabel>
-                                            <FormControl><Input type="number" max={5} {...field} /></FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )} />
-                               )}
-                               <Button type="submit" className="w-full">Gerar Estrutura</Button>
-                            </form>
-                         </Form>
-                      </div>
                       <Separator/>
                       <div>
                         <h3 className="text-lg font-medium mb-2">Estrutura de Blinds Manual</h3>
