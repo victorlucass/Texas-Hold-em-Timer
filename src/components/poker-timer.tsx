@@ -21,9 +21,10 @@ import {
   Trophy,
   Calculator,
   Maximize,
-  Minimize
+  Minimize,
+  Sparkles
 } from 'lucide-react';
-import React, { useCallback, useEffect, useState, useTransition, useActionState } from 'react';
+import React, { useCallback, useEffect, useState, useTransition, useActionState, useRef } from 'react';
 import { useFormStatus } from 'react-dom';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -59,6 +60,8 @@ import { cn } from '@/lib/utils';
 import { Skeleton } from './ui/skeleton';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from './ui/dialog';
 import { Separator } from './ui/separator';
+import { Switch } from './ui/switch';
+import { Label } from './ui/label';
 
 const initialBlindSchedule: BlindLevel[] = [
   { id: 1, smallBlind: 25, bigBlind: 50, ante: 0 },
@@ -72,8 +75,8 @@ const initialBlindSchedule: BlindLevel[] = [
 ];
 
 const initialPlayers: Player[] = [
-    {id: 1, name: 'Jogador 1', balance: 0},
-    {id: 2, name: 'Jogador 2', balance: 0}
+    {id: 1, name: 'Jogador 1', balance: 0, rebuys: 0},
+    {id: 2, name: 'Jogador 2', balance: 0, rebuys: 0}
 ];
 
 
@@ -84,12 +87,21 @@ const formatTime = (seconds: number): string => {
 };
 
 const TournamentDetailsSchema = z.object({
-  buyIn: z.coerce.number().min(1, 'O Buy-in deve ser de pelo menos 1'),
+  buyIn: z.coerce.number().min(0, 'O Buy-in deve ser de pelo menos 0'),
+  rebuyValue: z.coerce.number().min(0, 'O Rebuy deve ser de pelo menos 0'),
 });
 
 const SettingsSchema = z.object({
   roundLength: z.coerce.number().min(1, 'A duração da rodada deve ser de pelo menos 1 minuto'),
 });
+
+const BlindGenerationSchema = z.object({
+  totalChips: z.coerce.number().min(1, 'O total de fichas deve ser maior que zero.'),
+  startingSmallBlind: z.coerce.number().min(1, 'O Small Blind inicial deve ser maior que zero.'),
+  numLevels: z.coerce.number().min(5, 'O número de níveis deve ser pelo menos 5.').max(20, 'O número de níveis não pode exceder 20.'),
+  useRebuys: z.boolean().default(true),
+  rebuysPerPlayer: z.coerce.number().min(0).max(5).default(2)
+})
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -112,9 +124,11 @@ export default function PokerTimer() {
   const [prizePool, setPrizePool] = useState(0);
   const [players, setPlayers] = useState<Player[]>(initialPlayers);
   const [buyIn, setBuyIn] = useState(20);
+  const [rebuyValue, setRebuyValue] = useState(20);
   const [currentWinner, setCurrentWinner] = useState<Player | null>(null);
   const [roundHistory, setRoundHistory] = useState<RoundWinner[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
   const [coachAnswer, setCoachAnswer] = useState('');
   const [isPending, startTransition] = useTransition();
@@ -128,26 +142,36 @@ export default function PokerTimer() {
   
   const tournamentDetailsForm = useForm<z.infer<typeof TournamentDetailsSchema>>({
     resolver: zodResolver(TournamentDetailsSchema),
-    defaultValues: { buyIn: 20 },
+    defaultValues: { buyIn: 20, rebuyValue: 20 },
+  });
+
+  const blindGenerationForm = useForm<z.infer<typeof BlindGenerationSchema>>({
+      resolver: zodResolver(BlindGenerationSchema),
+      defaultValues: {
+          totalChips: 10000,
+          startingSmallBlind: 25,
+          numLevels: 12,
+          useRebuys: true,
+          rebuysPerPlayer: 2,
+      },
   });
 
   useEffect(() => {
     setIsMounted(true);
     setTotalSeconds(roundLength * 60);
+    audioPlayerRef.current = new Audio('https://cdn.freesound.org/previews/219/219244_4032686-lq.mp3');
   }, []);
   
   const calculatePrizePool = useCallback(() => {
-    if (players.length >= 2 && buyIn >= 1) {
-      setPrizePool((players.length - 1) * buyIn);
-    } else {
-      setPrizePool(0);
-    }
-  }, [players.length, buyIn]);
+    const totalRebuys = players.reduce((acc, player) => acc + player.rebuys, 0);
+    const pool = (players.length * buyIn) + (totalRebuys * rebuyValue);
+    setPrizePool(pool);
+  }, [players, buyIn, rebuyValue]);
 
 
   useEffect(() => {
     calculatePrizePool();
-  }, [players.length, buyIn, calculatePrizePool]);
+  }, [players, buyIn, rebuyValue, calculatePrizePool]);
 
 
   useEffect(() => {
@@ -159,7 +183,17 @@ export default function PokerTimer() {
     }
   }, [formState, toast]);
 
+  const playLevelUpSound = () => {
+    if (audioPlayerRef.current) {
+        audioPlayerRef.current.currentTime = 0;
+        audioPlayerRef.current.play().catch(error => {
+            console.error("Erro ao tocar o áudio:", error);
+        });
+    }
+  };
+
   const levelUp = useCallback(() => {
+    playLevelUpSound();
     if (currentLevelIndex < blindSchedule.length - 1) {
       setCurrentLevelIndex((prev) => prev + 1);
       setTotalSeconds(roundLength * 60);
@@ -224,11 +258,56 @@ export default function PokerTimer() {
     setBlindSchedule(blindSchedule.filter((level) => level.id !== id));
   };
 
+  const handleBlindGeneration = (values: z.infer<typeof BlindGenerationSchema>) => {
+    const { totalChips, startingSmallBlind, numLevels, useRebuys, rebuysPerPlayer } = values;
+    const numPlayers = players.length;
+
+    let effectiveTotalChips = totalChips;
+    if(useRebuys) {
+        const rebuyChips = (totalChips / numPlayers) * numPlayers * rebuysPerPlayer * 0.5; // Assume rebuy is half the starting stack
+        effectiveTotalChips += rebuyChips;
+    }
+    
+    const mFactorTarget = 10;
+    const averageStack = effectiveTotalChips / numPlayers;
+    const startingPot = startingSmallBlind + (startingSmallBlind * 2); // SB + BB
+    
+    let currentSmallBlind = startingSmallBlind;
+    const newSchedule: BlindLevel[] = [];
+
+    for (let i = 1; i <= numLevels; i++) {
+        const bigBlind = currentSmallBlind * 2;
+        let ante = 0;
+        
+        // Introduce antes later in the tournament, commonly when BB is around 1/20th of average stack
+        if (bigBlind > averageStack / 20 && i > 3) {
+            ante = Math.floor(bigBlind / 4 / 25) * 25 || 25; // Round to nearest 25
+        }
+        
+        newSchedule.push({
+            id: i,
+            smallBlind: currentSmallBlind,
+            bigBlind: bigBlind,
+            ante: ante,
+        });
+
+        // Increase blinds, more aggressively in later stages
+        const increaseFactor = i < numLevels / 2 ? 1.5 : 2;
+        let nextSmallBlind = Math.round((currentSmallBlind * increaseFactor) / 25) * 25;
+        if(nextSmallBlind <= currentSmallBlind) nextSmallBlind = currentSmallBlind + 25;
+        currentSmallBlind = nextSmallBlind;
+    }
+
+    setBlindSchedule(newSchedule);
+    toast({ title: "Estrutura de Blinds Gerada!", description: `${numLevels} níveis foram criados com sucesso.` });
+  };
+
   const addPlayer = () => {
     const newPlayer: Player = {
         id: (players.length > 0 ? Math.max(...players.map(p => p.id)) : 0) + 1,
         name: `Jogador ${players.length + 1}`,
         balance: 0,
+        rebuys: 0,
     };
     setPlayers([...players, newPlayer]);
   };
@@ -244,18 +323,32 @@ export default function PokerTimer() {
     }
     setPlayers(players.filter(p => p.id !== id));
   }
+
+  const handleRebuy = (playerId: number) => {
+      setPlayers(players.map(p => {
+          if (p.id === playerId) {
+              return {...p, rebuys: p.rebuys + 1, balance: p.balance - rebuyValue};
+          }
+          return p;
+      }));
+      toast({description: `Rebuy de R$${rebuyValue} adicionado para ${players.find(p=>p.id === playerId)?.name}.`});
+  }
   
   const handleDeclareWinner = () => {
     if (currentWinner) {
       const roundNumber = roundHistory.length + 1;
-      const prizeForWinner = (players.length - 1) * buyIn;
+      const totalRebuys = players.reduce((acc, p) => acc + p.rebuys, 0);
+      const prizeForWinner = (players.length * buyIn) + (totalRebuys * rebuyValue);
+
+      // Reset rebuys for next round calculation
+      const playersForNextRound = players.map(p => ({...p, rebuys: 0}));
 
       setPlayers(
-        players.map((p) => {
+        playersForNextRound.map((p) => {
           if (p.id === currentWinner.id) {
-            return { ...p, balance: p.balance + prizeForWinner };
+            return { ...p, balance: p.balance + (prizeForWinner - buyIn) };
           }
-          return { ...p, balance: p.balance - buyIn };
+          return p;
         })
       );
 
@@ -266,7 +359,7 @@ export default function PokerTimer() {
 
       toast({
         title: `Rodada ${roundNumber} Finalizada`,
-        description: `${currentWinner.name} venceu R$${prizeForWinner.toLocaleString('pt-BR')}!`,
+        description: `${currentWinner.name} venceu R$${prizePool.toLocaleString('pt-BR')}!`,
       });
 
       setCurrentWinner(null);
@@ -278,15 +371,21 @@ export default function PokerTimer() {
     setBlindSchedule(initialBlindSchedule);
     setPlayers(initialPlayers);
     setBuyIn(20);
-    tournamentDetailsForm.reset({ buyIn: 20 });
+    setRebuyValue(20);
+    tournamentDetailsForm.reset({ buyIn: 20, rebuyValue: 20 });
     setRoundHistory([]);
     setCurrentWinner(null);
     toast({ title: 'Torneio Finalizado!', description: 'Todos os dados foram reiniciados.' });
   }
 
   const getSettlement = () => {
-    const debtors = players.filter(p => p.balance < 0).map(p => ({...p})).sort((a, b) => a.balance - b.balance);
-    const creditors = players.filter(p => p.balance > 0).map(p => ({...p})).sort((a, b) => b.balance - a.balance);
+    const playersWithFinalBalance = players.map(p => ({
+        ...p,
+        balance: p.balance - (p.rebuys * rebuyValue) - buyIn,
+    }))
+
+    const debtors = playersWithFinalBalance.filter(p => p.balance < 0).map(p => ({...p})).sort((a, b) => a.balance - b.balance);
+    const creditors = playersWithFinalBalance.filter(p => p.balance > 0).map(p => ({...p})).sort((a, b) => b.balance - a.balance);
     const transactions = [];
 
     let i = 0, j = 0;
@@ -295,7 +394,7 @@ export default function PokerTimer() {
       const creditor = creditors[j];
       const amount = Math.min(-debtor.balance, creditor.balance);
       
-      transactions.push(`${debtor.name} deve pagar R$${amount.toLocaleString('pt-BR')} para ${creditor.name}.`);
+      transactions.push(`${debtor.name} deve pagar R$${amount.toFixed(2).replace('.',',')} para ${creditor.name}.`);
       
       debtor.balance += amount;
       creditor.balance -= amount;
@@ -329,11 +428,11 @@ export default function PokerTimer() {
     >
       <div className={cn(
         'mx-auto w-full max-w-7xl backdrop-blur-sm bg-black/30 p-4 rounded-lg',
-        isFullscreen && 'max-w-full h-screen p-0 rounded-none backdrop-blur-none bg-background'
+        isFullscreen && 'max-w-full h-screen p-0 rounded-none backdrop-blur-none bg-background flex flex-col'
         )}>
         <div className={cn(
             'grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-8',
-            isFullscreen && 'h-full w-full'
+            isFullscreen && 'h-full w-full flex-grow'
             )}>
           {/* Timer e Blinds */}
           <div className={cn(
@@ -413,31 +512,58 @@ export default function PokerTimer() {
             <CardContent>
               <Form {...tournamentDetailsForm}>
                 <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
-                   <FormField
-                      control={tournamentDetailsForm.control}
-                      name="buyIn"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Valor do Buy-in</FormLabel>
-                          <FormControl>
-                            <div className="relative mt-1">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">R$</span>
-                                <Input 
-                                    type="number" 
-                                    {...field}
-                                    onChange={e => {
-                                        const value = parseInt(e.target.value) || 0;
-                                        field.onChange(value);
-                                        setBuyIn(value);
-                                    }}
-                                    placeholder="ex: 20" 
-                                    className="pl-10" />
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                        control={tournamentDetailsForm.control}
+                        name="buyIn"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Buy-in</FormLabel>
+                            <FormControl>
+                              <div className="relative mt-1">
+                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">R$</span>
+                                  <Input 
+                                      type="number" 
+                                      {...field}
+                                      onChange={e => {
+                                          const value = parseInt(e.target.value) || 0;
+                                          field.onChange(value);
+                                          setBuyIn(value);
+                                      }}
+                                      placeholder="ex: 20" 
+                                      className="pl-10" />
+                              </div>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                          control={tournamentDetailsForm.control}
+                          name="rebuyValue"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Rebuy</FormLabel>
+                              <FormControl>
+                                <div className="relative mt-1">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">R$</span>
+                                    <Input 
+                                        type="number" 
+                                        {...field}
+                                        onChange={e => {
+                                            const value = parseInt(e.target.value) || 0;
+                                            field.onChange(value);
+                                            setRebuyValue(value);
+                                        }}
+                                        placeholder="ex: 20" 
+                                        className="pl-10" />
+                                </div>
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                    </div>
                     <div className="space-y-4 mt-4">
                         <FormItem>
                             <div className="flex justify-between items-center mb-2">
@@ -450,6 +576,7 @@ export default function PokerTimer() {
                                         <FormControl>
                                             <Input value={player.name} onChange={(e) => updatePlayerName(player.id, e.target.value)} className="flex-grow"/>
                                         </FormControl>
+                                        <Button variant="outline" size="sm" onClick={() => handleRebuy(player.id)}>Rebuy ({player.rebuys})</Button>
                                         <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={() => removePlayer(player.id)}>
                                             <XCircle className="h-4 w-4"/>
                                         </Button>
@@ -461,22 +588,22 @@ export default function PokerTimer() {
                 </form>
               </Form>
               <div className="mt-6 text-center">
-                <p className="text-lg text-gray-400">Prêmio da Rodada</p>
+                <p className="text-lg text-gray-400">Prêmio Total</p>
                 <p className="font-headline text-5xl font-bold text-accent">
                   R$ {prizePool.toLocaleString('pt-BR')}
                 </p>
               </div>
               <Dialog>
                 <DialogTrigger asChild>
-                  <Button className="w-full mt-4" disabled={players.length < 2}>
-                    <Trophy className="mr-2"/> Declarar Vencedor da Rodada
+                  <Button className="w-full mt-4" disabled={players.length < 2 || roundHistory.length > 0}>
+                    <Trophy className="mr-2"/> Declarar Vencedor
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Vencedor da Rodada {roundHistory.length + 1}</DialogTitle>
+                    <DialogTitle>Vencedor do Torneio</DialogTitle>
                     <DialogDescription>
-                      Selecione o vencedor para registrar o resultado e iniciar a próxima rodada.
+                      Selecione o vencedor para finalizar o torneio e calcular os pagamentos.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="grid grid-cols-2 gap-2 my-4">
@@ -488,11 +615,11 @@ export default function PokerTimer() {
                   </div>
                   {currentWinner && (
                     <div className="text-center p-2 bg-muted rounded-md">
-                        <p><strong>{currentWinner.name}</strong> receberá R${prizePool.toLocaleString('pt-BR')} nesta rodada.</p>
+                        <p><strong>{currentWinner.name}</strong> receberá R${prizePool.toLocaleString('pt-BR')}.</p>
                     </div>
                   )}
                   <DialogFooter>
-                    <Button onClick={handleDeclareWinner} disabled={!currentWinner}>Confirmar e Próxima Rodada</Button>
+                    <Button onClick={handleDeclareWinner} disabled={!currentWinner}>Confirmar e Finalizar</Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
@@ -537,15 +664,17 @@ export default function PokerTimer() {
                  {roundHistory.length > 0 && (
                     <Dialog>
                         <DialogTrigger asChild>
-                            <Button variant="outline"><History className="mr-2"/> Histórico de Rodadas</Button>
+                            <Button variant="outline"><History className="mr-2"/> Vencedor</Button>
                         </DialogTrigger>
                         <DialogContent>
                             <DialogHeader>
-                                <DialogTitle>Histórico de Rodadas</DialogTitle>
+                                <DialogTitle>Vencedor do Torneio</DialogTitle>
                             </DialogHeader>
-                            <ul className="space-y-2 max-h-64 overflow-y-auto">
-                               {roundHistory.map((r, i) => <li key={i} className="text-sm p-2 bg-muted rounded-md"><strong>Rodada {r.round}:</strong> {r.winnerName} venceu.</li>)}
-                            </ul>
+                            <div className="text-center my-4 p-4 bg-muted rounded-lg">
+                                <Trophy className="h-16 w-16 mx-auto text-accent"/>
+                                <p className="text-2xl font-bold mt-2">{roundHistory[0]?.winnerName}</p>
+                                <p>Parabéns!</p>
+                            </div>
                         </DialogContent>
                     </Dialog>
                 )}
@@ -589,8 +718,10 @@ export default function PokerTimer() {
                         </DialogContent>
                     </Dialog>
                  )}
-                 {roundHistory.length > 0 && (
-                    <Button onClick={finishTournament} variant="destructive">Finalizar Torneio</Button>
+                 {roundHistory.length === 0 ? (
+                    <Button onClick={finishTournament} variant="destructive" disabled={!isMounted || players.length === 0}>Encerrar Torneio Vazio</Button>
+                 ) : (
+                    <Button onClick={finishTournament} variant="destructive">Reiniciar Torneio</Button>
                  )}
             </div>
 
@@ -624,10 +755,60 @@ export default function PokerTimer() {
                       <Button type="submit">Salvar Configurações</Button>
                     </form>
                   </Form>
-                  
+                  <Separator/>
+                   <div>
+                    <h3 className="text-lg font-medium mb-4 flex items-center gap-2"><Sparkles className="text-accent"/> Gerador de Blinds Automático</h3>
+                     <Form {...blindGenerationForm}>
+                        <form onSubmit={blindGenerationForm.handleSubmit(handleBlindGeneration)} className="space-y-4">
+                           <FormField control={blindGenerationForm.control} name="totalChips" render={({field}) => (
+                               <FormItem>
+                                   <FormLabel>Total de fichas em jogo (inicial)</FormLabel>
+                                   <FormControl><Input type="number" {...field} /></FormControl>
+                                   <FormMessage />
+                               </FormItem>
+                           )} />
+                           <div className="grid grid-cols-2 gap-4">
+                             <FormField control={blindGenerationForm.control} name="startingSmallBlind" render={({field}) => (
+                                 <FormItem>
+                                     <FormLabel>Small Blind Inicial</FormLabel>
+                                     <FormControl><Input type="number" {...field} /></FormControl>
+                                     <FormMessage />
+                                 </FormItem>
+                             )} />
+                              <FormField control={blindGenerationForm.control} name="numLevels" render={({field}) => (
+                                 <FormItem>
+                                     <FormLabel>Nº de Níveis</FormLabel>
+                                     <FormControl><Input type="number" {...field} /></FormControl>
+                                     <FormMessage />
+                                 </FormItem>
+                             )} />
+                           </div>
+                           <FormField control={blindGenerationForm.control} name="useRebuys" render={({field}) => (
+                               <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
+                                   <div className="space-y-0.5">
+                                       <FormLabel>Considerar Rebuys?</FormLabel>
+                                       <FormDescription>Incluir até {blindGenerationForm.watch('rebuysPerPlayer')} rebuys por jogador no cálculo.</FormDescription>
+                                   </div>
+                                   <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                               </FormItem>
+                           )} />
+                           {blindGenerationForm.watch('useRebuys') && (
+                                <FormField control={blindGenerationForm.control} name="rebuysPerPlayer" render={({field}) => (
+                                    <FormItem>
+                                        <FormLabel>Rebuys por Jogador (máx)</FormLabel>
+                                        <FormControl><Input type="number" max={5} {...field} /></FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )} />
+                           )}
+                           <Button type="submit" className="w-full">Gerar Estrutura</Button>
+                        </form>
+                     </Form>
+                  </div>
+                  <Separator/>
                   <div>
-                    <h3 className="text-lg font-medium mb-2">Estrutura de Blinds</h3>
-                    <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-2">
+                    <h3 className="text-lg font-medium mb-2">Estrutura de Blinds Manual</h3>
+                    <div className="space-y-2 max-h-[30vh] overflow-y-auto pr-2">
                         {blindSchedule.map((level, index) => (
                           <div key={level.id} className="grid grid-cols-12 gap-2 items-center">
                               <span className="col-span-1">{index + 1}.</span>

@@ -9,6 +9,7 @@ export interface Player {
   id: number;
   name: string;
   balance: number;
+  rebuys: number;
 }
 
 export interface RoundWinner {
