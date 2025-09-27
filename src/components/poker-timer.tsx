@@ -160,8 +160,7 @@ export default function PokerTimer() {
   useEffect(() => {
     setIsMounted(true);
     setTotalSeconds(roundLength * 60);
-    audioPlayerRef.current = new Audio('https://cdn.freesound.org/previews/219/219244_4032686-lq.mp3');
-  }, []);
+  }, [roundLength]);
   
   const calculatePrizePool = useCallback(() => {
     const totalRebuys = players.reduce((acc, player) => acc + player.rebuys, 0);
@@ -427,76 +426,81 @@ export default function PokerTimer() {
   return (
     <main
       className={cn(
-        'min-h-screen w-full bg-background bg-cover bg-center bg-no-repeat p-4 md:p-8 transition-all duration-500',
-        isFullscreen && 'p-0 md:p-0'
-        )}
+        'min-h-screen w-full bg-background p-4 md:p-8',
+        isFullscreen && 'p-0'
+      )}
     >
-      <div className={cn(
-        'mx-auto w-full max-w-7xl backdrop-blur-sm bg-black/30 p-4 rounded-lg',
-        isFullscreen && 'max-w-full h-screen p-0 rounded-none backdrop-blur-none bg-background flex flex-col items-center justify-center'
-        )}>
-        
+      <audio ref={audioPlayerRef} src="/level-up.mp3" preload="auto" />
+      <div
+        className={cn(
+          'mx-auto w-full max-w-7xl backdrop-blur-sm bg-black/30 p-4 rounded-lg',
+          isFullscreen && 'max-w-full h-screen p-0 rounded-none backdrop-blur-none bg-background flex flex-col items-center justify-center'
+        )}
+      >
         {isFullscreen ? (
-            <Card className="flex flex-col justify-between border-accent w-full h-full border-0 rounded-none shadow-none">
-              <CardHeader className="flex flex-row justify-between items-start">
+          <Card className="flex flex-col justify-between border-accent w-full h-full border-0 rounded-none shadow-none">
+            <CardHeader className="flex flex-row justify-between items-start">
+              <div>
+                <CardTitle className="font-headline text-3xl text-accent">
+                  Nível {currentLevelIndex + 1}
+                </CardTitle>
+                <CardDescription>A rodada termina em:</CardDescription>
+              </div>
+              <Button onClick={toggleFullscreen} variant="ghost" size="icon">
+                <Minimize />
+                <span className="sr-only">Sair da Tela Cheia</span>
+              </Button>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center justify-center flex-grow">
+              <div
+                className={cn(
+                  'font-headline text-8xl md:text-9xl font-bold text-gray-100 transition-colors duration-500',
+                  totalSeconds <= 10 && totalSeconds > 0 && 'text-primary'
+                )}
+              >
+                {formatTime(totalSeconds)}
+              </div>
+              <div className="mt-8 flex w-full flex-col md:flex-row items-center justify-around text-center gap-8 md:gap-0">
                 <div>
-                  <CardTitle className="font-headline text-3xl text-accent">
-                    Nível {currentLevelIndex + 1}
-                  </CardTitle>
-                  <CardDescription>
-                    A rodada termina em:
-                  </CardDescription>
-                </div>
-                <Button onClick={toggleFullscreen} variant="ghost" size="icon">
-                    <Minimize />
-                    <span className="sr-only">Sair da Tela Cheia</span>
-                  </Button>
-              </CardHeader>
-              <CardContent className="flex flex-col items-center justify-center flex-grow">
-                <div
-                  className={cn(
-                    'font-headline text-8xl md:text-9xl font-bold text-gray-100 transition-colors duration-500',
-                    totalSeconds <= 10 && totalSeconds > 0 && 'text-primary'
+                  <h3 className="text-lg text-gray-400">Blinds Atuais</h3>
+                  <p className="font-headline text-2xl md:text-4xl text-gray-200">
+                    {currentBlind.smallBlind}/{currentBlind.bigBlind}
+                  </p>
+                  {currentBlind.ante > 0 && (
+                    <p className="text-md text-gray-400">Ante: {currentBlind.ante}</p>
                   )}
-                >
-                  {formatTime(totalSeconds)}
                 </div>
-                <div className="mt-8 flex w-full flex-col md:flex-row items-center justify-around text-center gap-8 md:gap-0">
+                {nextBlind && (
                   <div>
-                    <h3 className="text-lg text-gray-400">Blinds Atuais</h3>
+                    <h3 className="text-lg text-gray-400">Próximos Blinds</h3>
                     <p className="font-headline text-2xl md:text-4xl text-gray-200">
-                      {currentBlind.smallBlind}/{currentBlind.bigBlind}
+                      {nextBlind.smallBlind}/{nextBlind.bigBlind}
                     </p>
-                    {currentBlind.ante > 0 && (
-                      <p className="text-md text-gray-400">Ante: {currentBlind.ante}</p>
+                    {nextBlind.ante > 0 && (
+                      <p className="text-md text-gray-400">Ante: {nextBlind.ante}</p>
                     )}
                   </div>
-                  {nextBlind && (
-                    <div>
-                      <h3 className="text-lg text-gray-400">Próximos Blinds</h3>
-                      <p className="font-headline text-2xl md:text-4xl text-gray-200">
-                        {nextBlind.smallBlind}/{nextBlind.bigBlind}
-                      </p>
-                      {nextBlind.ante > 0 && (
-                        <p className="text-md text-gray-400">Ante: {nextBlind.ante}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-              <CardFooter className="flex justify-center gap-4">
-                <Button onClick={toggleTimer} variant="default" size="lg" className="bg-accent text-accent-foreground hover:bg-accent/90 w-32">
-                  {isTimerRunning ? <Pause className="mr-2" /> : <Play className="mr-2" />}
-                  {isTimerRunning ? 'Pausar' : 'Iniciar'}
-                </Button>
-                <Button onClick={resetTimer} variant="outline" size="lg" className="w-32">
-                  <RefreshCw className="mr-2" />
-                  Reiniciar
-                </Button>
-              </CardFooter>
-            </Card>
+                )}
+              </div>
+            </CardContent>
+            <CardFooter className="flex justify-center gap-4">
+              <Button
+                onClick={toggleTimer}
+                variant="default"
+                size="lg"
+                className="bg-accent text-accent-foreground hover:bg-accent/90 w-32"
+              >
+                {isTimerRunning ? <Pause className="mr-2" /> : <Play className="mr-2" />}
+                {isTimerRunning ? 'Pausar' : 'Iniciar'}
+              </Button>
+              <Button onClick={resetTimer} variant="outline" size="lg" className="w-32">
+                <RefreshCw className="mr-2" />
+                Reiniciar
+              </Button>
+            </CardFooter>
+          </Card>
         ) : (
-        <>
+          <>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-8">
               {/* Timer e Blinds */}
               <div className="md:col-span-2 md:row-span-2">
@@ -506,14 +510,12 @@ export default function PokerTimer() {
                       <CardTitle className="font-headline text-3xl text-accent">
                         Nível {currentLevelIndex + 1}
                       </CardTitle>
-                      <CardDescription>
-                        A rodada termina em:
-                      </CardDescription>
+                      <CardDescription>A rodada termina em:</CardDescription>
                     </div>
                     <Button onClick={toggleFullscreen} variant="ghost" size="icon">
-                        <Maximize />
-                        <span className="sr-only">Tela Cheia</span>
-                      </Button>
+                      <Maximize />
+                      <span className="sr-only">Tela Cheia</span>
+                    </Button>
                   </CardHeader>
                   <CardContent className="flex flex-col items-center justify-center flex-grow">
                     <div
@@ -548,7 +550,12 @@ export default function PokerTimer() {
                     </div>
                   </CardContent>
                   <CardFooter className="flex justify-center gap-4">
-                    <Button onClick={toggleTimer} variant="default" size="lg" className="bg-accent text-accent-foreground hover:bg-accent/90 w-32">
+                    <Button
+                      onClick={toggleTimer}
+                      variant="default"
+                      size="lg"
+                      className="bg-accent text-accent-foreground hover:bg-accent/90 w-32"
+                    >
                       {isTimerRunning ? <Pause className="mr-2" /> : <Play className="mr-2" />}
                       {isTimerRunning ? 'Pausar' : 'Iniciar'}
                     </Button>
@@ -888,7 +895,7 @@ export default function PokerTimer() {
                   </SheetContent>
                 </Sheet>
             </div>
-        </>
+          </>
         )}
       </div>
     </main>
