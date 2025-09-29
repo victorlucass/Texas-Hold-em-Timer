@@ -76,8 +76,8 @@ const initialBlindSchedule: BlindLevel[] = [
 ];
 
 const initialPlayers: Player[] = [
-    {id: 1, name: 'Jogador 1', balance: 0, rebuys: 0},
-    {id: 2, name: 'Jogador 2', balance: 0, rebuys: 0}
+    {id: 1, name: 'Jogador 1', balance: 0, rebuys: 0, addons: 0},
+    {id: 2, name: 'Jogador 2', balance: 0, rebuys: 0, addons: 0}
 ];
 
 
@@ -90,6 +90,7 @@ const formatTime = (seconds: number): string => {
 const TournamentDetailsSchema = z.object({
   buyIn: z.coerce.number().min(0, 'O Buy-in deve ser de pelo menos 0'),
   rebuyValue: z.coerce.number().min(0, 'O Rebuy deve ser de pelo menos 0'),
+  addonValue: z.coerce.number().min(0, 'O Add-on deve ser de pelo menos 0'),
 });
 
 const SettingsSchema = z.object({
@@ -118,7 +119,9 @@ export default function PokerTimer() {
   const [players, setPlayers] = useState<Player[]>(initialPlayers);
   const [buyIn, setBuyIn] = useState(20);
   const [rebuyValue, setRebuyValue] = useState(20);
-  const [currentWinner, setCurrentWinner] = useState<Player | null>(null);
+  const [addonValue, setAddonValue] = useState(20);
+  const [winner1, setWinner1] = useState<Player | null>(null);
+  const [winner2, setWinner2] = useState<Player | null>(null);
   const [roundHistory, setRoundHistory] = useState<RoundWinner[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
@@ -128,6 +131,11 @@ export default function PokerTimer() {
 
   const [formState, formAction] = useActionState(handlePokerCoach, { message: '', error: '' });
 
+  // Prize split state
+  const [splitPrize, setSplitPrize] = useState(true);
+  const [firstPlacePercent, setFirstPlacePercent] = useState(60);
+  const [secondPlacePercent, setSecondPlacePercent] = useState(40);
+
   const settingsForm = useForm<z.infer<typeof SettingsSchema>>({
     resolver: zodResolver(SettingsSchema),
     defaultValues: { roundLength },
@@ -135,7 +143,7 @@ export default function PokerTimer() {
   
   const tournamentDetailsForm = useForm<z.infer<typeof TournamentDetailsSchema>>({
     resolver: zodResolver(TournamentDetailsSchema),
-    defaultValues: { buyIn: 20, rebuyValue: 20 },
+    defaultValues: { buyIn: 20, rebuyValue: 20, addonValue: 20 },
   });
 
   useEffect(() => {
@@ -145,7 +153,8 @@ export default function PokerTimer() {
   
   const calculatePrizePool = useCallback(() => {
     const totalRebuysValue = players.reduce((acc, player) => acc + player.rebuys, 0);
-    const pool = (players.length * buyIn) + totalRebuysValue;
+    const totalAddonsValue = players.reduce((acc, player) => acc + player.addons, 0);
+    const pool = (players.length * buyIn) + totalRebuysValue + totalAddonsValue;
     setPrizePool(pool);
   }, [players, buyIn]);
 
@@ -245,6 +254,7 @@ export default function PokerTimer() {
         name: `Jogador ${players.length + 1}`,
         balance: 0,
         rebuys: 0,
+        addons: 0,
     };
     setPlayers([...players, newPlayer]);
   };
@@ -265,7 +275,6 @@ export default function PokerTimer() {
     setPlayers(
       players.map((p) => {
         if (p.id === playerId) {
-          // 'rebuys' stores the monetary value of rebuys
           const rebuyAmount = rebuyValue * count;
           return { ...p, rebuys: p.rebuys + rebuyAmount };
         }
@@ -276,42 +285,66 @@ export default function PokerTimer() {
     const rebuyText = count === 1 ? 'Rebuy' : 'Rebuy Duplo';
     toast({ description: `${rebuyText} adicionado para ${playerName}.` });
   };
+
+  const handleAddon = (playerId: number) => {
+    setPlayers(
+      players.map((p) => {
+        if (p.id === playerId) {
+          return { ...p, addons: p.addons + addonValue };
+        }
+        return p;
+      })
+    );
+    const playerName = players.find((p) => p.id === playerId)?.name;
+    toast({ description: `Add-on adicionado para ${playerName}.` });
+  };
   
   const handleDeclareWinner = () => {
-    if (currentWinner) {
-      const roundNumber = roundHistory.length + 1;
-      
-      const prizeForWinner = prizePool;
+    const roundNumber = roundHistory.length + 1;
+    let newRoundHistory = [...roundHistory];
+    let toastDescription = '';
 
-      setPlayers(
-        players.map((p) => {
-          let newBalance = p.balance;
-          // Subtract buy-in for this round
-          newBalance -= buyIn;
-          // Subtract rebuys made in this round (which are stored in p.rebuys)
-          newBalance -= p.rebuys;
-          
-          if (p.id === currentWinner.id) {
-            // Add the prize pool to the winner's balance
-            newBalance += prizeForWinner;
-          }
-          // Reset rebuys for the next round and update balance
-          return { ...p, balance: newBalance, rebuys: 0 };
-        })
-      );
+    const newPlayers = players.map(p => {
+        let newBalance = p.balance;
+        // Subtract buy-in for this round
+        newBalance -= buyIn;
+        // Subtract rebuys and addons made in this round
+        newBalance -= p.rebuys;
+        newBalance -= p.addons;
 
-      setRoundHistory([
-        ...roundHistory,
-        { round: roundNumber, winnerName: currentWinner.name },
-      ]);
+        if (splitPrize && winner1 && winner2) {
+            const prize1 = prizePool * (firstPlacePercent / 100);
+            const prize2 = prizePool * (secondPlacePercent / 100);
+            if (p.id === winner1.id) newBalance += prize1;
+            if (p.id === winner2.id) newBalance += prize2;
+        } else if (!splitPrize && winner1) {
+            if (p.id === winner1.id) newBalance += prizePool;
+        }
 
-      toast({
-        title: `Rodada ${roundNumber} Finalizada`,
-        description: `${currentWinner.name} venceu R$${prizePool.toLocaleString('pt-BR')}!`,
-      });
+        // Reset rebuys and addons for the next round and update balance
+        return { ...p, balance: newBalance, rebuys: 0, addons: 0 };
+    });
 
-      setCurrentWinner(null);
+    if (splitPrize && winner1 && winner2) {
+        const prize1 = prizePool * (firstPlacePercent / 100);
+        const prize2 = prizePool * (secondPlacePercent / 100);
+        newRoundHistory.push({ round: roundNumber, winnerName: `1º: ${winner1.name}, 2º: ${winner2.name}` });
+        toastDescription = `${winner1.name} (1º) ganhou R$${prize1.toLocaleString('pt-BR')} e ${winner2.name} (2º) ganhou R$${prize2.toLocaleString('pt-BR')}.`;
+    } else if (!splitPrize && winner1) {
+        newRoundHistory.push({ round: roundNumber, winnerName: winner1.name });
+        toastDescription = `${winner1.name} venceu R$${prizePool.toLocaleString('pt-BR')}!`;
+    } else {
+        toast({variant: 'destructive', description: "Selecione o(s) vencedor(es) para continuar."});
+        return;
     }
+
+    setPlayers(newPlayers);
+    setRoundHistory(newRoundHistory);
+    toast({ title: `Rodada ${roundNumber} Finalizada`, description: toastDescription });
+    
+    // Reset winners
+    setWinner1(null);
+    setWinner2(null);
   };
 
   const finishTournament = () => {
@@ -320,9 +353,11 @@ export default function PokerTimer() {
     setPlayers(initialPlayers);
     setBuyIn(20);
     setRebuyValue(20);
-    tournamentDetailsForm.reset({ buyIn: 20, rebuyValue: 20 });
+    setAddonValue(20);
+    tournamentDetailsForm.reset({ buyIn: 20, rebuyValue: 20, addonValue: 20 });
     setRoundHistory([]);
-    setCurrentWinner(null);
+    setWinner1(null);
+    setWinner2(null);
     toast({ title: 'Torneio Finalizado!', description: 'Todos os dados foram reiniciados.' });
   }
 
@@ -526,7 +561,7 @@ export default function PokerTimer() {
                 <CardContent>
                   <Form {...tournamentDetailsForm}>
                     <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-3 gap-4">
                         <FormField
                             control={tournamentDetailsForm.control}
                             name="buyIn"
@@ -577,6 +612,31 @@ export default function PokerTimer() {
                                 </FormItem>
                               )}
                             />
+                            <FormField
+                              control={tournamentDetailsForm.control}
+                              name="addonValue"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Add-on</FormLabel>
+                                  <FormControl>
+                                    <div className="relative mt-1">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">R$</span>
+                                        <Input 
+                                            type="number" 
+                                            {...field}
+                                            onChange={e => {
+                                                const value = parseInt(e.target.value) || 0;
+                                                field.onChange(value);
+                                                setAddonValue(value);
+                                            }}
+                                            placeholder="ex: 20" 
+                                            className="pl-10" />
+                                    </div>
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
                         </div>
                         <div className="space-y-4 mt-4">
                             <FormItem>
@@ -595,9 +655,10 @@ export default function PokerTimer() {
                                                   <XCircle className="h-4 w-4"/>
                                               </Button>
                                             </div>
-                                            <div className="flex items-center gap-2">
-                                              <Button variant="outline" size="sm" className="w-full" onClick={() => handleRebuy(player.id, 1)}>Rebuy (R${rebuyValue})</Button>
-                                              <Button variant="outline" size="sm" className="w-full" onClick={() => handleRebuy(player.id, 2)}>Rebuy Duplo (R${rebuyValue * 2})</Button>
+                                            <div className="grid grid-cols-3 gap-2">
+                                                <Button variant="outline" size="sm" onClick={() => handleRebuy(player.id, 1)}>Rebuy (R${rebuyValue})</Button>
+                                                <Button variant="outline" size="sm" onClick={() => handleRebuy(player.id, 2)}>Rebuy Duplo</Button>
+                                                <Button variant="outline" size="sm" onClick={() => handleAddon(player.id)}>Add-on (R${addonValue})</Button>
                                             </div>
                                         </div>
                                     ))}
@@ -606,6 +667,27 @@ export default function PokerTimer() {
                        </div>
                     </form>
                   </Form>
+                  <Separator className="my-6"/>
+                  <div className="space-y-4">
+                        <div>
+                            <div className="flex items-center justify-between">
+                                <Label htmlFor="split-prize-switch">Dividir Prêmio?</Label>
+                                <Switch id="split-prize-switch" checked={splitPrize} onCheckedChange={setSplitPrize} />
+                            </div>
+                            {splitPrize && (
+                                <div className="grid grid-cols-2 gap-4 mt-4">
+                                    <FormItem>
+                                        <FormLabel>1º Lugar (%)</FormLabel>
+                                        <Input type="number" value={firstPlacePercent} onChange={e => setFirstPlacePercent(Number(e.target.value))} />
+                                    </FormItem>
+                                    <FormItem>
+                                        <FormLabel>2º Lugar (%)</FormLabel>
+                                        <Input type="number" value={secondPlacePercent} onChange={e => setSecondPlacePercent(Number(e.target.value))} />
+                                    </FormItem>
+                                </div>
+                            )}
+                        </div>
+                  </div>
                   <div className="mt-6 text-center">
                     <p className="text-lg text-gray-400">Prêmio da Rodada</p>
                     <p className="font-headline text-5xl font-bold text-accent">
@@ -620,25 +702,54 @@ export default function PokerTimer() {
                     </DialogTrigger>
                     <DialogContent>
                       <DialogHeader>
-                        <DialogTitle>Vencedor da Rodada</DialogTitle>
+                        <DialogTitle>Vencedor(es) da Rodada</DialogTitle>
                         <DialogDescription>
-                          Selecione o vencedor desta rodada. O prêmio será adicionado ao seu balanço.
+                            {splitPrize ? 'Selecione o primeiro e o segundo lugar.' : 'Selecione o vencedor desta rodada.'}
                         </DialogDescription>
                       </DialogHeader>
-                      <div className="grid grid-cols-2 gap-2 my-4">
-                        {players.map(p => (
-                          <Button key={p.id} variant={currentWinner?.id === p.id ? 'default' : 'outline'} onClick={() => setCurrentWinner(p)}>
-                            {p.name}
-                          </Button>
-                        ))}
-                      </div>
-                      {currentWinner && (
+                        {splitPrize ? (
+                            <div className="space-y-4 my-4">
+                                <div>
+                                    <Label>1º Lugar</Label>
+                                    <div className="grid grid-cols-2 gap-2 mt-2">
+                                        {players.filter(p => p.id !== winner2?.id).map(p => (
+                                            <Button key={p.id} variant={winner1?.id === p.id ? 'default' : 'outline'} onClick={() => setWinner1(p)}>
+                                                {p.name}
+                                            </Button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div>
+                                    <Label>2º Lugar</Label>
+                                    <div className="grid grid-cols-2 gap-2 mt-2">
+                                        {players.filter(p => p.id !== winner1?.id).map(p => (
+                                            <Button key={p.id} variant={winner2?.id === p.id ? 'default' : 'outline'} onClick={() => setWinner2(p)}>
+                                                {p.name}
+                                            </Button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-2 gap-2 my-4">
+                                {players.map(p => (
+                                <Button key={p.id} variant={winner1?.id === p.id ? 'default' : 'outline'} onClick={() => setWinner1(p)}>
+                                    {p.name}
+                                </Button>
+                                ))}
+                            </div>
+                        )}
+                      {winner1 && (
                         <div className="text-center p-2 bg-muted rounded-md">
-                            <p><strong>{currentWinner.name}</strong> receberá R${prizePool.toLocaleString('pt-BR')}.</p>
+                            {splitPrize && winner2 ? (
+                                <p><strong>{winner1.name}</strong> (1º) e <strong>{winner2.name}</strong> (2º) selecionados.</p>
+                            ) : (
+                                <p><strong>{winner1.name}</strong> receberá R${prizePool.toLocaleString('pt-BR')}.</p>
+                            )}
                         </div>
                       )}
                       <DialogFooter>
-                        <Button onClick={handleDeclareWinner} disabled={!currentWinner}>Confirmar Vencedor</Button>
+                        <Button onClick={handleDeclareWinner} disabled={!winner1 || (splitPrize && !winner2)}>Confirmar Vencedor(es)</Button>
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
