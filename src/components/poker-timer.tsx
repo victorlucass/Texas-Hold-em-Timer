@@ -676,14 +676,14 @@ export default function PokerTimer() {
                             </div>
                             {splitPrize && (
                                 <div className="grid grid-cols-2 gap-4 mt-4">
-                                    <FormItem>
-                                        <FormLabel>1º Lugar (%)</FormLabel>
+                                    <div className="space-y-2">
+                                        <Label>1º Lugar (%)</Label>
                                         <Input type="number" value={firstPlacePercent} onChange={e => setFirstPlacePercent(Number(e.target.value))} />
-                                    </FormItem>
-                                    <FormItem>
-                                        <FormLabel>2º Lugar (%)</FormLabel>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>2º Lugar (%)</Label>
                                         <Input type="number" value={secondPlacePercent} onChange={e => setSecondPlacePercent(Number(e.target.value))} />
-                                    </FormItem>
+                                    </div>
                                 </div>
                             )}
                         </div>
