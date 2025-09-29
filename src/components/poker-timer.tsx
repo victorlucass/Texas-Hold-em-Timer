@@ -144,15 +144,15 @@ export default function PokerTimer() {
   }, [roundLength]);
   
   const calculatePrizePool = useCallback(() => {
-    const totalRebuys = players.reduce((acc, player) => acc + player.rebuys, 0);
-    const pool = (players.length * buyIn) + (totalRebuys * rebuyValue);
+    const totalRebuysValue = players.reduce((acc, player) => acc + player.rebuys, 0);
+    const pool = (players.length * buyIn) + totalRebuysValue;
     setPrizePool(pool);
-  }, [players, buyIn, rebuyValue]);
+  }, [players, buyIn]);
 
 
   useEffect(() => {
     calculatePrizePool();
-  }, [players, buyIn, rebuyValue, calculatePrizePool]);
+  }, [players, buyIn, calculatePrizePool]);
 
 
   useEffect(() => {
@@ -265,8 +265,9 @@ export default function PokerTimer() {
     setPlayers(
       players.map((p) => {
         if (p.id === playerId) {
-          // Here, 'rebuys' actually stores the monetary value of rebuys for prize pool calculation
-          return { ...p, rebuys: p.rebuys + (rebuyValue * count) };
+          // 'rebuys' stores the monetary value of rebuys
+          const rebuyAmount = rebuyValue * count;
+          return { ...p, rebuys: p.rebuys + rebuyAmount };
         }
         return p;
       })
@@ -280,18 +281,22 @@ export default function PokerTimer() {
     if (currentWinner) {
       const roundNumber = roundHistory.length + 1;
       
-      // prizePool is already calculated based on buyIns and rebuys
       const prizeForWinner = prizePool;
 
-      // Reset rebuys for next round calculation
-      const playersForNextRound = players.map(p => ({...p, rebuys: 0}));
-
       setPlayers(
-        playersForNextRound.map((p) => {
+        players.map((p) => {
+          let newBalance = p.balance;
+          // Subtract buy-in for this round
+          newBalance -= buyIn;
+          // Subtract rebuys made in this round (which are stored in p.rebuys)
+          newBalance -= p.rebuys;
+          
           if (p.id === currentWinner.id) {
-            return { ...p, balance: p.balance + (prizeForWinner - buyIn) };
+            // Add the prize pool to the winner's balance
+            newBalance += prizeForWinner;
           }
-          return { ...p, balance: p.balance - buyIn };
+          // Reset rebuys for the next round and update balance
+          return { ...p, balance: newBalance, rebuys: 0 };
         })
       );
 
@@ -369,7 +374,10 @@ export default function PokerTimer() {
         isFullscreen && 'p-0'
       )}
     >
-      <audio ref={audioPlayerRef} src="/level-up.mp3" preload="auto" />
+      <audio ref={audioPlayerRef} preload="auto">
+        <source src="/level-up.mp3" type="audio/mpeg" />
+        Seu navegador não suporta o elemento de áudio.
+      </audio>
       <div
         className={cn(
           'mx-auto w-full max-w-7xl backdrop-blur-sm bg-black/30 p-4 rounded-lg',
@@ -692,7 +700,7 @@ export default function PokerTimer() {
                             </DialogContent>
                         </Dialog>
                     )}
-                    {roundHistory.length > 0 && (
+                    {players.some(p => p.balance !== 0) && (
                         <Dialog>
                             <DialogTrigger asChild>
                                 <Button variant="destructive"><Calculator className="mr-2"/> Encerrar e Acertar Contas</Button>
