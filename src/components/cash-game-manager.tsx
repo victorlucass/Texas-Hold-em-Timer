@@ -64,33 +64,86 @@ const ChipIcon = ({ color, className }: { color: string; className?: string }) =
 
 const distributeChips = (buyIn: number, availableChips: Chip[]): { chipId: number; count: number }[] => {
   let remainingAmount = buyIn;
-  const distribution: { chipId: number; count: number }[] = [];
   const sortedChips = [...availableChips].sort((a, b) => b.value - a.value);
+  const distribution: Map<number, number> = new Map(sortedChips.map(c => [c.id, 0]));
 
+  // 1. Tenta alocar pelo menos uma de cada ficha para garantir variedade, se possível
+  for (const chip of sortedChips.slice().reverse()) { // itera do menor para o maior
+    if (remainingAmount >= chip.value) {
+      distribution.set(chip.id, (distribution.get(chip.id) || 0) + 1);
+      remainingAmount = parseFloat((remainingAmount - chip.value).toFixed(2));
+    }
+  }
+
+  // 2. Distribui o restante de forma mais equilibrada
+  // Define porcentagens para distribuir o valor restante entre as fichas
+  const distributionPercentages: { [key: number]: number } = {
+      4: 0.5, // 50% para a ficha de R$10
+      3: 0.3, // 30% para a ficha de R$1
+      2: 0.15, // 15% para a ficha de R$0.50
+      1: 0.05  // 5% para a ficha de R$0.25
+  };
+
+  for (const chip of sortedChips) {
+      if (remainingAmount <= 0) break;
+      const targetAmount = remainingAmount * (distributionPercentages[chip.id] || 0);
+      const count = Math.floor(targetAmount / chip.value);
+      if (count > 0) {
+        distribution.set(chip.id, (distribution.get(chip.id) || 0) + count);
+        remainingAmount = parseFloat((remainingAmount - count * chip.value).toFixed(2));
+      }
+  }
+  
+  // 3. Preenche o restante com a lógica "greedy" para garantir que o valor bata
   for (const chip of sortedChips) {
     if (remainingAmount >= chip.value) {
       const count = Math.floor(remainingAmount / chip.value);
       if (count > 0) {
-        distribution.push({ chipId: chip.id, count });
+        distribution.set(chip.id, (distribution.get(chip.id) || 0) + count);
         remainingAmount = parseFloat((remainingAmount - count * chip.value).toFixed(2));
       }
     }
   }
 
-  const totalDistributedValue = distribution.reduce((acc, dist) => {
+  // 4. Validação final
+  const finalDistribution = Array.from(distribution.entries()).map(([chipId, count]) => ({ chipId, count }));
+  const totalDistributedValue = finalDistribution.reduce((acc, dist) => {
     const chip = availableChips.find(c => c.id === dist.chipId);
     return acc + (chip ? chip.value * dist.count : 0);
   }, 0);
 
-  if (Math.abs(totalDistributedValue - buyIn) > 0.001) {
-    return [];
+  if (Math.abs(totalDistributedValue - buyIn) > 0.01) {
+    // Se a lógica complexa falhar, volta para a greedy simples como fallback
+    console.warn("Complex distribution failed. Falling back to greedy.");
+    let greedyRemaining = buyIn;
+    const greedyDistribution = new Map(sortedChips.map(c => [c.id, 0]));
+     for (const chip of sortedChips) {
+        if (greedyRemaining >= chip.value) {
+          const count = Math.floor(greedyRemaining / chip.value);
+          if (count > 0) {
+            greedyDistribution.set(chip.id, count);
+            greedyRemaining = parseFloat((greedyRemaining - count * chip.value).toFixed(2));
+          }
+        }
+      }
+      const finalGreedyDist = Array.from(greedyDistribution.entries()).map(([chipId, count]) => ({ chipId, count }));
+      const totalGreedyValue = finalGreedyDist.reduce((acc, dist) => {
+        const chip = availableChips.find(c => c.id === dist.chipId);
+        return acc + (chip ? chip.value * dist.count : 0);
+      }, 0);
+      
+      if(Math.abs(totalGreedyValue - buyIn) > 0.01) return []; // Falha total
+
+      return sortedChips.map(chip => ({
+        chipId: chip.id,
+        count: greedyDistribution.get(chip.id) || 0,
+      }));
   }
 
-  // Mapeia para incluir todas as fichas, mesmo que a contagem seja 0
-  return availableChips.map(chip => {
-    const found = distribution.find(d => d.chipId === chip.id);
-    return { chipId: chip.id, count: found ? found.count : 0 };
-  });
+  return sortedChips.map(chip => ({
+    chipId: chip.id,
+    count: distribution.get(chip.id) || 0,
+  }));
 };
 
 
@@ -336,7 +389,7 @@ const CashGameManager: React.FC = () => {
                 <CardDescription className="text-secondary-foreground/80">
                   Valor total que entrou na mesa.
                 </CardDescription>
-              </Header>
+              </CardHeader>
               <CardContent>
                 <p className="text-4xl font-bold text-accent">
                   R$ {totalBuyIn.toFixed(2)}
@@ -411,7 +464,7 @@ const CashGameManager: React.FC = () => {
                   Ao final do jogo, insira a contagem de fichas de cada jogador
                   para calcular os resultados.
                 </CardDescription>
-              </Header>
+              </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground text-center">
                   Funcionalidade em desenvolvimento...
