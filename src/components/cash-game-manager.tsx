@@ -349,12 +349,12 @@ const CashGameManager: React.FC = () => {
             totals.set(chip.chipId, (totals.get(chip.chipId) || 0) + chip.count);
         });
     });
-    return sortedChips.map(chip => totals.get(chip.id) || 0);
+    return sortedChips.map(chip => ({ chip, count: totals.get(chip.id) || 0}));
   }, [players, sortedChips, getPlayerTotalChips]);
   
   const totalValueOnTableByChip = useMemo(() => {
-    return sortedChips.map((chip, index) => chip.value * totalChipsOnTable[index]);
-  }, [sortedChips, totalChipsOnTable]);
+    return totalChipsOnTable.map(({chip, count}) => chip.value * count);
+  }, [totalChipsOnTable]);
 
   const grandTotalValueOnTable = useMemo(() => {
       return totalValueOnTableByChip.reduce((acc, value) => acc + value, 0);
@@ -488,7 +488,7 @@ const CashGameManager: React.FC = () => {
               </>
             )}
           </DialogContent>
-        
+        </Dialog>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-8">
             <Card>
@@ -591,8 +591,8 @@ const CashGameManager: React.FC = () => {
                           <TableCell colSpan={2} className="text-right">
                             Total de Fichas na Mesa
                           </TableCell>
-                          {totalChipsOnTable.map((count, index) => (
-                            <TableCell key={sortedChips[index].id} className="text-center font-mono">
+                          {totalChipsOnTable.map(({chip, count}) => (
+                            <TableCell key={chip.id} className="text-center font-mono">
                               {count}
                             </TableCell>
                           ))}
@@ -756,6 +756,20 @@ const CashGameManager: React.FC = () => {
                         </DialogDescription>
                     </DialogHeader>
                     <div className="overflow-y-auto pr-4 -mr-4 h-full">
+
+                       <div className="p-4 rounded-md bg-muted/50 border border-border mb-6">
+                            <h3 className="text-lg font-bold text-foreground mb-2">Total de Fichas em Jogo</h3>
+                            <div className="flex flex-wrap gap-x-6 gap-y-2">
+                                {totalChipsOnTable.map(({chip, count}) => (
+                                    <div key={chip.id} className="flex items-center gap-2">
+                                        <ChipIcon color={chip.color} />
+                                        <span className="font-bold">{chip.name}:</span>
+                                        <span className="font-mono text-muted-foreground">{count} fichas</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
                        <Table>
                             <TableHeader>
                                 <TableRow>
@@ -882,7 +896,6 @@ const CashGameManager: React.FC = () => {
             </Card>
           </div>
         </div>
-        </Dialog>
       </div>
     </div>
   );
