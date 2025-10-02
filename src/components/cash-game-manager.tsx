@@ -60,17 +60,7 @@ const ChipIcon = ({ color, className }: { color: string; className?: string }) =
   />
 );
 
-
-const CashGameManager: React.FC = () => {
-  const { toast } = useToast();
-  const [chips, setChips] = useState<Chip[]>(initialChips);
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [newPlayerName, setNewPlayerName] = useState('');
-  const [newPlayerBuyIn, setNewPlayerBuyIn] = useState('');
-
-  const sortedChips = useMemo(() => [...chips].sort((a,b) => a.value - b.value), [chips]);
-
-  const distributeChips = useCallback((buyIn: number, availableChips: Chip[]): { chipId: number; count: number }[] => {
+const distributeChips = (buyIn: number, availableChips: Chip[]): { chipId: number; count: number }[] => {
     let remainingAmount = buyIn;
     const distribution: { chipId: number; count: number }[] = [];
     const sortedAvailableChips = [...availableChips].sort((a, b) => b.value - a.value);
@@ -141,7 +131,16 @@ const CashGameManager: React.FC = () => {
 
 
     return distribution;
-  }, []);
+};
+
+const CashGameManager: React.FC = () => {
+  const { toast } = useToast();
+  const [chips, setChips] = useState<Chip[]>(initialChips);
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [newPlayerName, setNewPlayerName] = useState('');
+  const [newPlayerBuyIn, setNewPlayerBuyIn] = useState('');
+
+  const sortedChips = useMemo(() => [...chips].sort((a,b) => a.value - b.value), [chips]);
 
   const handleAddPlayer = () => {
     if (!newPlayerName || !newPlayerBuyIn) {
