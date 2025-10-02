@@ -112,31 +112,32 @@ const distributeChips = (buyIn: number, availableChips: Chip[]): { chipId: numbe
 
     const distribution: Map<number, number> = new Map(sortedChips.map(c => [c.id, 0]));
 
-    // 1. Tenta alocar pelo menos uma de cada ficha para garantir variedade, se possível
-    const smallChipsFirst = [...sortedChips].sort((a, b) => a.value - b.value);
+    // 1. Tenta alocar uma pequena quantidade de fichas de centavos primeiro para garantir variedade
+    const smallChipsFirst = [...sortedChips].sort((a, b) => a.value - b.value).filter(c => c.value < 1);
     for (const chip of smallChipsFirst) {
-        if (remainingAmount >= chip.value * Math.max(2, (1 / (chip.value / buyIn))/2) && chip.value < (buyIn/4)) {
-            const count = 1;
-            distribution.set(chip.id, (distribution.get(chip.id) || 0) + count);
-            remainingAmount = parseFloat((remainingAmount - chip.value * count).toFixed(2));
+        // Tenta alocar um número que faça sentido para o buy-in
+        const idealCount = Math.min(Math.floor(buyIn * 0.1 / chip.value), 5); // Ex: 10% do buy-in, max 5 fichas
+        if (remainingAmount >= chip.value * idealCount) {
+            distribution.set(chip.id, (distribution.get(chip.id) || 0) + idealCount);
+            remainingAmount = parseFloat((remainingAmount - chip.value * idealCount).toFixed(2));
         }
     }
-
-    // 2. Distribui o restante de forma mais equilibrada
+    
+    // 2. Distribui o restante de forma mais equilibrada, priorizando fichas menores no final
     for (const chip of sortedChips) {
         if (remainingAmount <= 0) break;
         if(chip.value > remainingAmount) continue;
 
         let allocationPercentage = 0;
-        if (chip.value >= 10) allocationPercentage = 0.5;
-        else if (chip.value >= 1) allocationPercentage = 0.3;
-        else allocationPercentage = 0.1;
+        if (chip.value >= 10) allocationPercentage = 0.5; // 50% para fichas de 10+
+        else if (chip.value >= 1) allocationPercentage = 0.4; // 40% para fichas de 1 a 9
+        else allocationPercentage = 0.3; // 30% para fichas < 1 (aumentado)
 
         let targetValueForChip = remainingAmount * allocationPercentage;
-
+        
         let count = Math.floor(targetValueForChip / chip.value);
 
-        // Tenta arredondar para o múltiplo de 5 mais próximo se for ficha de centavos
+        // Arredonda para múltiplos de 5 para fichas de centavos para facilitar contagem
         if(chip.value < 1 && count > 5) {
             count = Math.round(count / 5) * 5;
         }
@@ -161,9 +162,10 @@ const distributeChips = (buyIn: number, availableChips: Chip[]): { chipId: numbe
       }
     }
 
-    // 4. Se ainda sobrar, tenta adicionar nas menores fichas
+    // 4. Se ainda sobrar poeira, adiciona nas menores fichas
     if (remainingAmount > 0.01) {
-        for (const chip of smallChipsFirst) {
+        const smallestChips = [...sortedChips].sort((a,b) => a.value-b.value);
+        for (const chip of smallestChips) {
              if (remainingAmount < chip.value) continue;
              const count = Math.floor(remainingAmount / chip.value);
              if (count > 0) {
@@ -561,7 +563,7 @@ const CashGameManager: React.FC = () => {
                 </div>
               </CardContent>
             </Card>
-
+            
             <Dialog onOpenChange={(isOpen) => { if(!isOpen) {setPlayerForDetails(null); setRebuyAmount('')} }}>
               <Card>
                 <CardHeader>
@@ -1116,5 +1118,3 @@ const CashGameManager: React.FC = () => {
 };
 
 export default CashGameManager;
-
-    
