@@ -73,6 +73,7 @@ interface Player {
 interface CashedOutPlayer {
   id: number;
   name: string;
+  transactions: PlayerTransaction[];
   cashedOutAt: Date;
   amountReceived: number;
   chipCounts: Map<number, number>;
@@ -342,7 +343,7 @@ const CashGameManager: React.FC = () => {
     toast({ title: 'Fichas Resetadas!', description: 'As fichas foram restauradas para o padrão.' });
   }
 
-  const totalBuyIn = useMemo(() => {
+  const totalActivePlayerBuyIn = useMemo(() => {
     return players.reduce((total, player) => 
         total + player.transactions.reduce((subTotal, trans) => subTotal + trans.amount, 0)
     , 0);
@@ -377,7 +378,14 @@ const CashGameManager: React.FC = () => {
       return totalValueOnTableByChip.reduce((acc, value) => acc + value, 0);
   },[totalValueOnTableByChip]);
 
-
+  const totalSessionBuyIn = useMemo(() => {
+    const activePlayersBuyIn = players.reduce((total, player) => 
+        total + player.transactions.reduce((subTotal, trans) => subTotal + trans.amount, 0)
+    , 0);
+    const cashedOutPlayersBuyIn = cashedOutPlayers.reduce((total, player) => total + player.totalInvested, 0);
+    return activePlayersBuyIn + cashedOutPlayersBuyIn;
+  }, [players, cashedOutPlayers]);
+  
   // Settlement Logic
   const [isSettlementOpen, setIsSettlementOpen] = useState(false);
   const handlePlayerChipCountChange = (playerId: number, chipId: number, count: number) => {
@@ -402,14 +410,16 @@ const CashGameManager: React.FC = () => {
   }, [sortedChips]);
 
   const totalSettlementValue = useMemo(() => {
-    return players.reduce((total, player) => {
+    const activePlayersValue = players.reduce((total, player) => {
         return total + getPlayerSettlementData(player).finalValue;
     }, 0);
-  }, [players, getPlayerSettlementData]);
+    const cashedOutPlayersValue = cashedOutPlayers.reduce((total, player) => total + player.amountReceived, 0);
+    return activePlayersValue + cashedOutPlayersValue;
+  }, [players, cashedOutPlayers, getPlayerSettlementData]);
 
   const settlementDifference = useMemo(() => {
-      return totalSettlementValue - totalBuyIn;
-  }, [totalSettlementValue, totalBuyIn]);
+      return totalSettlementValue - totalSessionBuyIn;
+  }, [totalSettlementValue, totalSessionBuyIn]);
 
   const handleOpenCashOut = (player: Player) => {
     setPlayerToCashOut(player);
@@ -436,6 +446,7 @@ const CashGameManager: React.FC = () => {
     const newCashedOutPlayer: CashedOutPlayer = {
       id: playerToCashOut.id,
       name: playerToCashOut.name,
+      transactions: playerToCashOut.transactions,
       cashedOutAt: new Date(),
       amountReceived: cashOutValue,
       chipCounts: cashOutChipCounts,
@@ -736,7 +747,7 @@ const CashGameManager: React.FC = () => {
               </CardHeader>
               <CardContent>
                 <p className="text-4xl font-bold text-accent">
-                  {totalBuyIn.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  {totalActivePlayerBuyIn.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </p>
               </CardContent>
             </Card>
@@ -971,7 +982,7 @@ const CashGameManager: React.FC = () => {
                     </div>
                     <DialogFooter className="mt-4 gap-2 sm:gap-0">
                         <div className="flex-1 text-center md:text-right font-mono bg-muted p-2 rounded-md">
-                           TOTAL ENTRADO: <span className="font-bold">{totalBuyIn.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                           TOTAL ENTRADO: <span className="font-bold">{totalSessionBuyIn.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                            <br/>
                            TOTAL CONTADO: <span className="font-bold">{totalSettlementValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                            <br/>
