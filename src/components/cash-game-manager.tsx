@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
+import Link from 'next/link';
 import {
   Card,
   CardContent,
@@ -30,9 +31,9 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import Link from 'next/link';
 
-// Tipos e Constantes
+// Tipos, Constantes e Funções de Utilidade movidos para fora do componente
+
 interface Chip {
   id: number;
   value: number;
@@ -67,34 +68,33 @@ const distributeChips = (buyIn: number, availableChips: Chip[]): { chipId: numbe
   const sortedChips = [...availableChips].sort((a, b) => b.value - a.value);
 
   for (const chip of sortedChips) {
-      if (remainingAmount >= chip.value) {
-          const count = Math.floor(remainingAmount / chip.value);
-          if (count > 0) {
-              distribution.push({ chipId: chip.id, count });
-              remainingAmount = parseFloat((remainingAmount - count * chip.value).toFixed(2));
-          }
+    if (remainingAmount >= chip.value) {
+      const count = Math.floor(remainingAmount / chip.value);
+      if (count > 0) {
+        distribution.push({ chipId: chip.id, count });
+        remainingAmount = parseFloat((remainingAmount - count * chip.value).toFixed(2));
       }
+    }
   }
 
-  // Verifica se a distribuição foi bem-sucedida
   const totalDistributedValue = distribution.reduce((acc, dist) => {
     const chip = availableChips.find(c => c.id === dist.chipId);
     return acc + (chip ? chip.value * dist.count : 0);
   }, 0);
 
   if (Math.abs(totalDistributedValue - buyIn) > 0.001) {
-      return []; // Retorna array vazio para indicar falha
+    return [];
   }
-  
-  // Mapeia para garantir que todas as fichas estejam no array, mesmo que com contagem 0
-  const finalDistribution = availableChips.map(chip => {
-      const found = distribution.find(d => d.chipId === chip.id);
-      return found || { chipId: chip.id, count: 0 };
-  });
 
-  return finalDistribution;
+  // Mapeia para incluir todas as fichas, mesmo que a contagem seja 0
+  return availableChips.map(chip => {
+    const found = distribution.find(d => d.chipId === chip.id);
+    return { chipId: chip.id, count: found ? found.count : 0 };
+  });
 };
 
+
+// O Componente Principal
 const CashGameManager: React.FC = () => {
   const { toast } = useToast();
   const [chips, setChips] = useState<Chip[]>(initialChips);
@@ -104,7 +104,7 @@ const CashGameManager: React.FC = () => {
 
   const sortedChips = useMemo(() => [...chips].sort((a, b) => a.value - b.value), [chips]);
 
-  const handleAddPlayer = () => {
+  const handleAddPlayer = useCallback(() => {
     if (!newPlayerName || !newPlayerBuyIn) {
       toast({
         variant: 'destructive',
@@ -146,10 +146,10 @@ const CashGameManager: React.FC = () => {
         description: `${newPlayer.name} entrou na mesa com R$${buyInValue.toFixed(2)}.`,
     });
 
-    setPlayers([...players, newPlayer]);
+    setPlayers(prevPlayers => [...prevPlayers, newPlayer]);
     setNewPlayerName('');
     setNewPlayerBuyIn('');
-  };
+  }, [newPlayerName, newPlayerBuyIn, chips, players, toast]);
 
   const removePlayer = (id: number) => {
     setPlayers(players.filter(p => p.id !== id));
