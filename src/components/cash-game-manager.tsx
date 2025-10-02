@@ -22,15 +22,26 @@ import {
   TableFooter as UiTableFooter,
 } from '@/components/ui/table';
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import {
   PlusCircle,
   Trash2,
   Palette,
   Calculator,
   UserPlus,
   ArrowLeft,
+  X,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { Label } from './ui/label';
 
 // Tipos, Constantes e Funções de Utilidade movidos para fora do componente
 
@@ -69,25 +80,29 @@ const distributeChips = (buyIn: number, availableChips: Chip[]): { chipId: numbe
 
   // 1. Tenta alocar pelo menos uma de cada ficha para garantir variedade, se possível
   for (const chip of sortedChips.slice().reverse()) { // itera do menor para o maior
-    if (remainingAmount >= chip.value) {
+    if (remainingAmount >= chip.value * 2) { // Garante que há valor suficiente para não comprometer a distribuição
       distribution.set(chip.id, (distribution.get(chip.id) || 0) + 1);
       remainingAmount = parseFloat((remainingAmount - chip.value).toFixed(2));
     }
   }
 
   // 2. Distribui o restante de forma mais equilibrada
-  // Define porcentagens para distribuir o valor restante entre as fichas
-  const distributionPercentages: { [key: number]: number } = {
-      4: 0.5, // 50% para a ficha de R$10
-      3: 0.3, // 30% para a ficha de R$1
-      2: 0.15, // 15% para a ficha de R$0.50
-      1: 0.05  // 5% para a ficha de R$0.25
-  };
+  const distributionPercentages: { [key: number]: number } = {};
+  if(sortedChips.find(c => c.value === 10)) distributionPercentages[sortedChips.find(c => c.value === 10)!.id] = 0.5;
+  if(sortedChips.find(c => c.value === 1)) distributionPercentages[sortedChips.find(c => c.value === 1)!.id] = 0.3;
+  if(sortedChips.find(c => c.value === 0.5)) distributionPercentages[sortedChips.find(c => c.value === 0.5)!.id] = 0.15;
+  if(sortedChips.find(c => c.value === 0.25)) distributionPercentages[sortedChips.find(c => c.value === 0.25)!.id] = 0.05;
 
   for (const chip of sortedChips) {
       if (remainingAmount <= 0) break;
       const targetAmount = remainingAmount * (distributionPercentages[chip.id] || 0);
-      const count = Math.floor(targetAmount / chip.value);
+      let count = Math.floor(targetAmount / chip.value);
+      
+      // Tenta arredondar para o múltiplo de 5 mais próximo se for ficha de centavos
+      if(chip.value < 1 && count > 5) {
+          count = Math.round(count / 5) * 5;
+      }
+
       if (count > 0) {
         distribution.set(chip.id, (distribution.get(chip.id) || 0) + count);
         remainingAmount = parseFloat((remainingAmount - count * chip.value).toFixed(2));
@@ -111,33 +126,10 @@ const distributeChips = (buyIn: number, availableChips: Chip[]): { chipId: numbe
     const chip = availableChips.find(c => c.id === dist.chipId);
     return acc + (chip ? chip.value * dist.count : 0);
   }, 0);
-
+  
   if (Math.abs(totalDistributedValue - buyIn) > 0.01) {
-    // Se a lógica complexa falhar, volta para a greedy simples como fallback
-    console.warn("Complex distribution failed. Falling back to greedy.");
-    let greedyRemaining = buyIn;
-    const greedyDistribution = new Map(sortedChips.map(c => [c.id, 0]));
-     for (const chip of sortedChips) {
-        if (greedyRemaining >= chip.value) {
-          const count = Math.floor(greedyRemaining / chip.value);
-          if (count > 0) {
-            greedyDistribution.set(chip.id, count);
-            greedyRemaining = parseFloat((greedyRemaining - count * chip.value).toFixed(2));
-          }
-        }
-      }
-      const finalGreedyDist = Array.from(greedyDistribution.entries()).map(([chipId, count]) => ({ chipId, count }));
-      const totalGreedyValue = finalGreedyDist.reduce((acc, dist) => {
-        const chip = availableChips.find(c => c.id === dist.chipId);
-        return acc + (chip ? chip.value * dist.count : 0);
-      }, 0);
-      
-      if(Math.abs(totalGreedyValue - buyIn) > 0.01) return []; // Falha total
-
-      return sortedChips.map(chip => ({
-        chipId: chip.id,
-        count: greedyDistribution.get(chip.id) || 0,
-      }));
+    console.warn("Complex distribution failed. Value mismatch.", {totalDistributedValue, buyIn});
+    return []; // Falha na distribuição
   }
 
   return sortedChips.map(chip => ({
@@ -154,6 +146,8 @@ const CashGameManager: React.FC = () => {
   const [players, setPlayers] = useState<Player[]>([]);
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerBuyIn, setNewPlayerBuyIn] = useState('');
+  const [isAddChipOpen, setIsAddChipOpen] = useState(false);
+  const [newChip, setNewChip] = useState({ name: '', value: '', color: '#ffffff' });
 
   const sortedChips = useMemo(() => [...chips].sort((a, b) => a.value - b.value), [chips]);
 
@@ -182,7 +176,7 @@ const CashGameManager: React.FC = () => {
         toast({
             variant: "destructive",
             title: "Erro na distribuição",
-            description: `Não foi possível distribuir R$${buyInValue.toFixed(2)} com as fichas atuais. Verifique os valores das fichas.`
+            description: `Não foi possível distribuir R$${buyInValue.toFixed(2)} com as fichas atuais. Tente um valor diferente ou ajuste as fichas.`
         })
         return;
     }
@@ -207,6 +201,45 @@ const CashGameManager: React.FC = () => {
   const removePlayer = (id: number) => {
     setPlayers(players.filter(p => p.id !== id));
   };
+  
+  const handleAddChip = () => {
+    const value = parseFloat(newChip.value);
+    if (!newChip.name || isNaN(value) || value <= 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro',
+        description: 'Por favor, preencha nome e valor (positivo) da ficha.',
+      });
+      return;
+    }
+    const newChipData: Chip = {
+      id: chips.length > 0 ? Math.max(...chips.map(c => c.id)) + 1 : 1,
+      name: newChip.name,
+      value,
+      color: newChip.color,
+    };
+    setChips([...chips, newChipData]);
+    toast({ title: 'Ficha Adicionada!', description: `A ficha "${newChip.name}" foi adicionada.` });
+    setNewChip({ name: '', value: '', color: '#ffffff' });
+    setIsAddChipOpen(false);
+  };
+  
+  const handleRemoveChip = (id: number) => {
+    if(players.length > 0) {
+      toast({ variant: 'destructive', title: 'Ação Bloqueada', description: 'Não é possível remover fichas com jogadores na mesa.' });
+      return;
+    }
+    setChips(chips.filter(c => c.id !== id));
+  };
+
+  const handleResetChips = () => {
+    if(players.length > 0) {
+      toast({ variant: 'destructive', title: 'Ação Bloqueada', description: 'Não é possível resetar as fichas com jogadores na mesa.' });
+      return;
+    }
+    setChips(initialChips);
+    toast({ title: 'Fichas Resetadas!', description: 'As fichas foram restauradas para o padrão.' });
+  }
 
   const totalBuyIn = useMemo(() => {
     return players.reduce((acc, player) => acc + player.buyIn, 0);
@@ -293,91 +326,93 @@ const CashGameManager: React.FC = () => {
                 <CardDescription>Distribuição de fichas para cada jogador e totais.</CardDescription>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Jogador</TableHead>
-                      <TableHead className="text-right">Buy-in</TableHead>
-                      {sortedChips.map((chip) => (
-                        <TableHead key={chip.id} className="text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            <ChipIcon color={chip.color} />
-                            <span>{chip.value.toFixed(2)}</span>
-                          </div>
-                        </TableHead>
-                      ))}
-                      <TableHead className="text-right">Ações</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {players.length === 0 ? (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell
-                          colSpan={3 + sortedChips.length}
-                          className="text-center text-muted-foreground h-24"
-                        >
-                          Nenhum jogador na mesa ainda.
-                        </TableCell>
+                        <TableHead>Jogador</TableHead>
+                        <TableHead className="text-right">Buy-in</TableHead>
+                        {sortedChips.map((chip) => (
+                          <TableHead key={chip.id} className="text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              <ChipIcon color={chip.color} />
+                              <span className="whitespace-nowrap">{chip.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                            </div>
+                          </TableHead>
+                        ))}
+                        <TableHead className="text-right">Ações</TableHead>
                       </TableRow>
-                    ) : (
-                      players.map((player) => (
-                        <TableRow key={player.id}>
-                          <TableCell className="font-medium">{player.name}</TableCell>
-                          <TableCell className="text-right font-mono">
-                            R$ {player.buyIn.toFixed(2)}
-                          </TableCell>
-                          {sortedChips.map((chip) => {
-                            const pChip = player.chips.find(
-                              (c) => c.chipId === chip.id
-                            );
-                            return (
-                              <TableCell key={chip.id} className="text-center font-mono">
-                                {pChip?.count || 0}
-                              </TableCell>
-                            );
-                          })}
-                          <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removePlayer(player.id)}
-                            >
-                              <Trash2 className="h-4 w-4 text-red-500" />
-                            </Button>
+                    </TableHeader>
+                    <TableBody>
+                      {players.length === 0 ? (
+                        <TableRow>
+                          <TableCell
+                            colSpan={3 + sortedChips.length}
+                            className="text-center text-muted-foreground h-24"
+                          >
+                            Nenhum jogador na mesa ainda.
                           </TableCell>
                         </TableRow>
-                      ))
+                      ) : (
+                        players.map((player) => (
+                          <TableRow key={player.id}>
+                            <TableCell className="font-medium">{player.name}</TableCell>
+                            <TableCell className="text-right font-mono">
+                              {player.buyIn.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </TableCell>
+                            {sortedChips.map((chip) => {
+                              const pChip = player.chips.find(
+                                (c) => c.chipId === chip.id
+                              );
+                              return (
+                                <TableCell key={chip.id} className="text-center font-mono">
+                                  {pChip?.count || 0}
+                                </TableCell>
+                              );
+                            })}
+                            <TableCell className="text-right">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removePlayer(player.id)}
+                              >
+                                <Trash2 className="h-4 w-4 text-red-500" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                    {players.length > 0 && (
+                      <UiTableFooter>
+                         <TableRow className="bg-muted/50 hover:bg-muted font-bold">
+                          <TableCell colSpan={2} className="text-right">
+                            Total de Fichas
+                          </TableCell>
+                          {sortedChips.map((chip) => (
+                            <TableCell key={chip.id} className="text-center font-mono">
+                              {totalChipsByType[chip.id] || 0}
+                            </TableCell>
+                          ))}
+                          <TableCell></TableCell>
+                        </TableRow>
+                        <TableRow className="bg-muted/80 hover:bg-muted font-bold">
+                          <TableCell colSpan={2} className="text-right">
+                            Valor Total
+                          </TableCell>
+                          {sortedChips.map((chip) => (
+                            <TableCell key={chip.id} className="text-center font-mono">
+                              {totalValueByType[chip.id].toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </TableCell>
+                          ))}
+                           <TableCell className="text-right font-mono">
+                              {grandTotalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </TableCell>
+                        </TableRow>
+                      </UiTableFooter>
                     )}
-                  </TableBody>
-                  {players.length > 0 && (
-                    <UiTableFooter>
-                       <TableRow className="bg-muted/50 hover:bg-muted font-bold">
-                        <TableCell colSpan={2} className="text-right">
-                          Total de Fichas
-                        </TableCell>
-                        {sortedChips.map((chip) => (
-                          <TableCell key={chip.id} className="text-center font-mono">
-                            {totalChipsByType[chip.id] || 0}
-                          </TableCell>
-                        ))}
-                        <TableCell></TableCell>
-                      </TableRow>
-                      <TableRow className="bg-muted/80 hover:bg-muted font-bold">
-                        <TableCell colSpan={2} className="text-right">
-                          Valor (R$)
-                        </TableCell>
-                        {sortedChips.map((chip) => (
-                          <TableCell key={chip.id} className="text-center font-mono">
-                            {totalValueByType[chip.id].toFixed(2)}
-                          </TableCell>
-                        ))}
-                         <TableCell className="text-right font-mono">
-                            R$ {grandTotalValue.toFixed(2)}
-                        </TableCell>
-                      </TableRow>
-                    </UiTableFooter>
-                  )}
-                </Table>
+                  </Table>
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -392,7 +427,7 @@ const CashGameManager: React.FC = () => {
               </CardHeader>
               <CardContent>
                 <p className="text-4xl font-bold text-accent">
-                  R$ {totalBuyIn.toFixed(2)}
+                  {totalBuyIn.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </p>
               </CardContent>
             </Card>
@@ -409,7 +444,7 @@ const CashGameManager: React.FC = () => {
               <CardContent>
                 <div className="space-y-4">
                   {chips.map((chip) => (
-                    <div key={chip.id} className="flex items-center gap-4">
+                    <div key={chip.id} className="flex items-center gap-2">
                       <ChipIcon color={chip.color} />
                       <Input
                         type="text"
@@ -421,10 +456,11 @@ const CashGameManager: React.FC = () => {
                             )
                           )
                         }
-                        className="w-24"
+                        className="w-24 flex-1"
+                        disabled={players.length > 0}
                       />
                       <div className="flex items-center">
-                        <span className="mr-2">R$</span>
+                        <span className="mr-2 text-sm">R$</span>
                         <Input
                           type="number"
                           step="0.01"
@@ -439,17 +475,50 @@ const CashGameManager: React.FC = () => {
                             )
                           }
                           className="w-20"
+                          disabled={players.length > 0}
                         />
                       </div>
+                       <Button variant="ghost" size="icon" disabled={players.length > 0} onClick={() => handleRemoveChip(chip.id)}>
+                          <Trash2 className="h-4 w-4 text-red-500/80" />
+                        </Button>
                     </div>
                   ))}
                 </div>
               </CardContent>
               <CardFooter className="flex-col gap-2">
-                <Button variant="outline" className="w-full" disabled>
-                  Adicionar Ficha
-                </Button>
-                <Button variant="ghost" className="w-full" disabled>
+                <Dialog open={isAddChipOpen} onOpenChange={setIsAddChipOpen}>
+                  <DialogTrigger asChild>
+                     <Button variant="outline" className="w-full" disabled={players.length > 0}>
+                        Adicionar Ficha
+                      </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Adicionar Nova Ficha</DialogTitle>
+                      <DialogDescription>
+                        Defina as propriedades da nova ficha para o jogo.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="chip-name" className="text-right">Nome</Label>
+                        <Input id="chip-name" value={newChip.name} onChange={e => setNewChip({...newChip, name: e.target.value})} className="col-span-3" />
+                      </div>
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="chip-value" className="text-right">Valor (R$)</Label>
+                        <Input id="chip-value" type="number" value={newChip.value} onChange={e => setNewChip({...newChip, value: e.target.value})} className="col-span-3" />
+                      </div>
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="chip-color" className="text-right">Cor</Label>
+                        <Input id="chip-color" type="color" value={newChip.color} onChange={e => setNewChip({...newChip, color: e.target.value})} className="col-span-3 h-10 p-1" />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button onClick={handleAddChip}>Salvar Ficha</Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+                <Button variant="ghost" className="w-full" onClick={handleResetChips} disabled={players.length > 0}>
                   Resetar Fichas
                 </Button>
               </CardFooter>
