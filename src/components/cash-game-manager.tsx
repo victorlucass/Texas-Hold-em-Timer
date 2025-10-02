@@ -803,7 +803,7 @@ const CashGameManager: React.FC = () => {
                         
                         <Separator className="my-6" />
 
-                        {Math.abs(settlementDifference) < 0.01 && settlementDifference !== 0 ? (
+                        {Math.abs(settlementDifference) < 0.01 ? (
                             <div className="p-4 rounded-md bg-green-900/50 border border-green-500">
                                 <div className="flex items-center gap-2">
                                     <CheckCircle2 className="text-green-400" />
@@ -843,7 +843,7 @@ const CashGameManager: React.FC = () => {
                            <br/>
                            Total Contado: <span className="font-bold">{totalSettlementValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                            <br/>
-                           Diferença: <span className={cn("font-bold", settlementDifference !== 0 ? "text-destructive" : "text-green-400")}>{settlementDifference.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                           Diferença: <span className={cn("font-bold", Math.abs(settlementDifference) >= 0.01 ? "text-destructive" : "text-green-400")}>{settlementDifference.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                         </div>
                         <Dialog>
                             <DialogTrigger asChild>
