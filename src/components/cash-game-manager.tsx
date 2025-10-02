@@ -23,7 +23,6 @@ import {
 import {
   PlusCircle,
   Trash2,
-  Coins,
   Palette,
   Calculator,
   UserPlus,
@@ -47,21 +46,20 @@ interface Player {
   chips: { chipId: number; count: number }[];
 }
 
-const ChipIcon = ({ color, className }: { color: string; className?: string }) => {
-  return (
-    <div
-      className={cn("h-5 w-5 rounded-full border-2 border-white/20 inline-block", className)}
-      style={{ backgroundColor: color }}
-    ></div>
-  );
-};
-
 const initialChips: Chip[] = [
   { id: 1, value: 0.25, color: '#22c55e', name: 'Verde' },
   { id: 2, value: 0.5, color: '#ef4444', name: 'Vermelha' },
   { id: 3, value: 1, color: '#f5f5f5', name: 'Branca' },
   { id: 4, value: 10, color: '#171717', name: 'Preta' },
 ];
+
+const ChipIcon = ({ color, className }: { color: string; className?: string }) => (
+  <div
+    className={cn("h-5 w-5 rounded-full border-2 border-white/20 inline-block", className)}
+    style={{ backgroundColor: color }}
+  />
+);
+
 
 const CashGameManager: React.FC = () => {
   const { toast } = useToast();
