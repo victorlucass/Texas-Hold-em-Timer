@@ -29,6 +29,7 @@ import {
   DialogDescription,
   DialogFooter,
   DialogTrigger,
+  DialogClose
 } from '@/components/ui/dialog';
 import {
   PlusCircle,
@@ -37,12 +38,14 @@ import {
   Calculator,
   UserPlus,
   ArrowLeft,
-  Coins,
   FileText,
+  AlertCircle,
+  CheckCircle2,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Label } from './ui/label';
+import { Separator } from './ui/separator';
 
 // Tipos, Constantes e Funções de Utilidade movidos para fora do componente
 
@@ -64,6 +67,7 @@ interface Player {
   id: number;
   name: string;
   transactions: PlayerTransaction[];
+  finalChipCounts?: Map<number, number>;
 }
 
 const initialChips: Chip[] = [
@@ -359,6 +363,76 @@ const CashGameManager: React.FC = () => {
   const grandTotalValueOnTable = useMemo(() => {
       return totalValueOnTableByChip.reduce((acc, value) => acc + value, 0);
   },[totalValueOnTableByChip]);
+
+
+  // Settlement Logic
+  const [isSettlementOpen, setIsSettlementOpen] = useState(false);
+  const handlePlayerChipCountChange = (playerId: number, chipId: number, count: number) => {
+    setPlayers(players.map(p => {
+        if (p.id === playerId) {
+            const newCounts = new Map(p.finalChipCounts);
+            newCounts.set(chipId, count);
+            return { ...p, finalChipCounts: newCounts };
+        }
+        return p;
+    }));
+  };
+
+  const getPlayerSettlementData = (player: Player) => {
+    const totalInvested = player.transactions.reduce((acc, t) => acc + t.amount, 0);
+    const finalValue = Array.from(player.finalChipCounts || []).reduce((acc, [chipId, count]) => {
+        const chip = sortedChips.find(c => c.id === chipId);
+        return acc + (chip ? chip.value * count : 0);
+    }, 0);
+    const balance = finalValue - totalInvested;
+    return { totalInvested, finalValue, balance };
+  };
+
+  const totalSettlementValue = useMemo(() => {
+    return players.reduce((total, player) => {
+        return total + getPlayerSettlementData(player).finalValue;
+    }, 0);
+  }, [players, sortedChips]);
+
+  const settlementDifference = useMemo(() => {
+      return totalSettlementValue - totalBuyIn;
+  }, [totalSettlementValue, totalBuyIn]);
+
+  const getSettlementTransactions = () => {
+    const playersWithBalance = players.map(p => {
+        const { balance } = getPlayerSettlementData(p);
+        return { name: p.name, balance };
+    });
+
+    const debtors = playersWithBalance.filter(p => p.balance < 0).map(p => ({...p})).sort((a,b) => a.balance - b.balance);
+    const creditors = playersWithBalance.filter(p => p.balance > 0).map(p => ({...p})).sort((a,b) => b.balance - a.balance);
+    const transactions = [];
+
+    let i = 0, j = 0;
+    while(i < debtors.length && j < creditors.length) {
+        const debtor = debtors[i];
+        const creditor = creditors[j];
+        const amount = Math.min(-debtor.balance, creditor.balance);
+
+        if (amount > 0.01) {
+            transactions.push(`${debtor.name} paga R$${amount.toFixed(2).replace('.', ',')} para ${creditor.name}.`);
+        }
+
+        debtor.balance += amount;
+        creditor.balance -= amount;
+
+        if (Math.abs(debtor.balance) < 0.01) i++;
+        if (Math.abs(creditor.balance) < 0.01) j++;
+    }
+    return transactions;
+  }
+  
+  const resetGame = () => {
+      setPlayers([]);
+      setChips(initialChips);
+      setIsSettlementOpen(false);
+      toast({ title: "Jogo Reiniciado!", description: "Tudo pronto para uma nova sessão."})
+  }
 
 
   return (
@@ -701,13 +775,129 @@ const CashGameManager: React.FC = () => {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground text-center">
-                  Funcionalidade em desenvolvimento...
+                  Clique no botão abaixo para iniciar o acerto de contas.
                 </p>
               </CardContent>
               <CardFooter>
-                <Button className="w-full" disabled>
-                  Iniciar Acerto de Contas
-                </Button>
+                <Dialog open={isSettlementOpen} onOpenChange={setIsSettlementOpen}>
+                  <DialogTrigger asChild>
+                    <Button className="w-full" disabled={players.length === 0}>
+                      Iniciar Acerto de Contas
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-[90vw] md:max-w-4xl lg:max-w-6xl h-[90vh]">
+                     <DialogHeader>
+                        <DialogTitle>Acerto de Contas Final</DialogTitle>
+                        <DialogDescription>
+                            Insira a contagem final de fichas para cada jogador. O sistema calculará automaticamente os valores e o balanço.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="overflow-y-auto pr-4 -mr-4 h-full">
+                       <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead className="w-[150px]">Jogador</TableHead>
+                                    {sortedChips.map(chip => (
+                                        <TableHead key={chip.id} className="text-center w-[100px]">
+                                             <div className="flex items-center justify-center gap-2">
+                                                <ChipIcon color={chip.color} />
+                                                <span>{chip.value.toFixed(2)}</span>
+                                             </div>
+                                        </TableHead>
+                                    ))}
+                                    <TableHead className="text-right">Investido (R$)</TableHead>
+                                    <TableHead className="text-right">Contado (R$)</TableHead>
+                                    <TableHead className="text-right">Balanço (R$)</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {players.map(player => {
+                                    const { totalInvested, finalValue, balance } = getPlayerSettlementData(player);
+                                    return (
+                                        <TableRow key={player.id}>
+                                            <TableCell className="font-medium">{player.name}</TableCell>
+                                            {sortedChips.map(chip => (
+                                                <TableCell key={chip.id}>
+                                                    <Input
+                                                        type="number"
+                                                        className="w-16 text-center font-mono mx-auto"
+                                                        min="0"
+                                                        value={player.finalChipCounts?.get(chip.id) || ''}
+                                                        onChange={e => handlePlayerChipCountChange(player.id, chip.id, parseInt(e.target.value) || 0)}
+                                                    />
+                                                </TableCell>
+                                            ))}
+                                            <TableCell className="text-right font-mono">{totalInvested.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</TableCell>
+                                            <TableCell className="text-right font-mono">{finalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</TableCell>
+                                            <TableCell className={cn("text-right font-mono font-bold", balance > 0 ? "text-green-400" : balance < 0 ? "text-red-400" : "")}>
+                                                {balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                            </TableCell>
+                                        </TableRow>
+                                    )
+                                })}
+                            </TableBody>
+                        </Table>
+                        
+                        <Separator className="my-6" />
+
+                        {Math.abs(settlementDifference) < 0.01 ? (
+                            <div className="p-4 rounded-md bg-green-900/50 border border-green-500">
+                                <div className="flex items-center gap-2">
+                                    <CheckCircle2 className="text-green-400" />
+                                    <h3 className="text-lg font-bold text-green-300">Contas Batem!</h3>
+                                </div>
+                                <p className="text-green-400/80 mt-1">O valor total contado corresponde ao valor total que entrou na mesa.</p>
+                                <div className="mt-4">
+                                    <h4 className="font-bold mb-2">Transferências Sugeridas:</h4>
+                                    <ul className="space-y-1 list-disc list-inside">
+                                        {getSettlementTransactions().map((t, i) => (
+                                            <li key={i}>{t}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="p-4 rounded-md bg-red-900/50 border border-red-500">
+                               <div className="flex items-center gap-2">
+                                    <AlertCircle className="text-red-400" />
+                                    <h3 className="text-lg font-bold text-red-300">Erro na Contagem!</h3>
+                                </div>
+                                <p className="text-red-400/80 mt-1">
+                                    A soma das fichas contadas não corresponde ao total de buy-ins. Verifique a contagem de fichas de cada jogador.
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                    <DialogFooter className="mt-4 gap-2 sm:gap-0">
+                        <div className="flex-1 text-center md:text-right font-mono bg-muted p-2 rounded-md">
+                           Total Entrou: <span className="font-bold">{totalBuyIn.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                           <br/>
+                           Total Contado: <span className="font-bold">{totalSettlementValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                           <br/>
+                           Diferença: <span className={cn("font-bold", settlementDifference !== 0 ? "text-destructive" : "text-green-400")}>{settlementDifference.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                        </div>
+                        <Dialog>
+                            <DialogTrigger asChild>
+                                <Button variant="destructive">Resetar e Finalizar Sessão</Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-md">
+                                <DialogHeader>
+                                    <DialogTitle>Confirmar Finalização</DialogTitle>
+                                    <DialogDescription>
+                                        Tem certeza que deseja finalizar a sessão? Todos os jogadores e transações serão apagados permanentemente.
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <DialogFooter>
+                                    <DialogClose asChild>
+                                      <Button variant="outline">Cancelar</Button>
+                                    </DialogClose>
+                                    <Button variant="destructive" onClick={resetGame}>Sim, Finalizar</Button>
+                                </DialogFooter>
+                            </DialogContent>
+                        </Dialog>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </CardFooter>
             </Card>
           </div>
@@ -720,5 +910,3 @@ const CashGameManager: React.FC = () => {
 };
 
 export default CashGameManager;
-
-    
