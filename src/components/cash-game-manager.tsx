@@ -32,7 +32,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 
-// Tipos e Constantes movidos para fora do componente para corrigir erro de sintaxe
+// Tipos e Constantes
 interface Chip {
   id: number;
   value: number;
@@ -54,40 +54,45 @@ const initialChips: Chip[] = [
   { id: 4, value: 10, color: '#171717', name: 'Preta' },
 ];
 
-const ChipIcon = ({ color, className }: { color: string; className?: string }) => {
-  return (
-    <div
-      className={cn('h-5 w-5 rounded-full border-2 border-white/20 inline-block', className)}
-      style={{ backgroundColor: color }}
-    />
-  );
-};
+const ChipIcon = ({ color, className }: { color: string; className?: string }) => (
+  <div
+    className={cn('h-5 w-5 rounded-full border-2 border-white/20 inline-block', className)}
+    style={{ backgroundColor: color }}
+  />
+);
 
 const distributeChips = (buyIn: number, availableChips: Chip[]): { chipId: number; count: number }[] => {
-    let remainingAmount = buyIn;
-    const distribution: { chipId: number; count: number }[] = [];
-    const sortedChips = [...availableChips].sort((a, b) => b.value - a.value);
+  let remainingAmount = buyIn;
+  const distribution: { chipId: number; count: number }[] = [];
+  const sortedChips = [...availableChips].sort((a, b) => b.value - a.value);
 
-    for (const chip of sortedChips) {
-        if (remainingAmount >= chip.value) {
-            const count = Math.floor(remainingAmount / chip.value);
-            if (count > 0) {
-                distribution.push({ chipId: chip.id, count });
-                remainingAmount = parseFloat((remainingAmount - count * chip.value).toFixed(2));
-            }
-        }
-    }
+  for (const chip of sortedChips) {
+      if (remainingAmount >= chip.value) {
+          const count = Math.floor(remainingAmount / chip.value);
+          if (count > 0) {
+              distribution.push({ chipId: chip.id, count });
+              remainingAmount = parseFloat((remainingAmount - count * chip.value).toFixed(2));
+          }
+      }
+  }
 
-    if (remainingAmount > 0.001) {
-        return []; // Retorna array vazio para indicar falha
-    }
-    
-    const finalDistribution = availableChips.map(chip => {
-        const found = distribution.find(d => d.chipId === chip.id);
-        return found || { chipId: chip.id, count: 0 };
-    });
+  // Verifica se a distribuição foi bem-sucedida
+  const totalDistributedValue = distribution.reduce((acc, dist) => {
+    const chip = availableChips.find(c => c.id === dist.chipId);
+    return acc + (chip ? chip.value * dist.count : 0);
+  }, 0);
 
-    return finalDistribution;
+  if (Math.abs(totalDistributedValue - buyIn) > 0.001) {
+      return []; // Retorna array vazio para indicar falha
+  }
+  
+  // Mapeia para garantir que todas as fichas estejam no array, mesmo que com contagem 0
+  const finalDistribution = availableChips.map(chip => {
+      const found = distribution.find(d => d.chipId === chip.id);
+      return found || { chipId: chip.id, count: 0 };
+  });
+
+  return finalDistribution;
 };
 
 const CashGameManager: React.FC = () => {
