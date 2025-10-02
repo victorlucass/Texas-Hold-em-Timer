@@ -418,77 +418,6 @@ const CashGameManager: React.FC = () => {
           </div>
         </div>
 
-        <Dialog onOpenChange={(isOpen) => { if(!isOpen) {setPlayerForDetails(null); setRebuyAmount('')} }}>
-          <DialogContent className="max-w-4xl">
-            <DialogHeader>
-              <DialogTitle>Detalhes de {playerForDetails?.name}</DialogTitle>
-              <DialogDescription>
-                Histórico de transações e contagem de fichas do jogador.
-              </DialogDescription>
-            </DialogHeader>
-            
-            {playerForDetails && (
-              <>
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Transação</TableHead>
-                            <TableHead className="text-right">Valor</TableHead>
-                            {sortedChips.map((chip) => (
-                              <TableHead key={chip.id} className="text-center">
-                                <div className="flex items-center justify-center gap-2">
-                                  <ChipIcon color={chip.color} />
-                                  <span className="whitespace-nowrap">{chip.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
-                                </div>
-                              </TableHead>
-                            ))}
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {playerForDetails.transactions.map(trans => (
-                            <TableRow key={trans.id}>
-                                <TableCell className="font-medium capitalize">{trans.type} #{trans.id}</TableCell>
-                                <TableCell className="text-right font-mono">{trans.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</TableCell>
-                                {sortedChips.map(chip => {
-                                    const tChip = trans.chips.find(c => c.chipId === chip.id);
-                                    return <TableCell key={chip.id} className="text-center font-mono">{tChip?.count || 0}</TableCell>
-                                })}
-                            </TableRow>
-                        ))}
-                    </TableBody>
-                    <UiTableFooter>
-                         <TableRow className="bg-muted/50 hover:bg-muted font-bold">
-                            <TableCell colSpan={2} className="text-right">Total de Fichas</TableCell>
-                            {getPlayerTotalChips(playerForDetails).map((chip) => (
-                                <TableCell key={chip.chipId} className="text-center font-mono">
-                                    {chip.count}
-                                </TableCell>
-                            ))}
-                        </TableRow>
-                        <TableRow className="bg-muted/80 hover:bg-muted font-bold">
-                            <TableCell colSpan={2} className="text-right">Valor Total Investido</TableCell>
-                            <TableCell colSpan={sortedChips.length + 1} className="text-left font-mono">
-                                {playerForDetails.transactions.reduce((acc, t) => acc + t.amount, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                            </TableCell>
-                        </TableRow>
-                    </UiTableFooter>
-                </Table>
-
-                <Separator className='my-4'/>
-
-                <div className="grid gap-4 py-4">
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="rebuy-amount" className="text-right">Adicionar Valor (R$)</Label>
-                    <Input id="rebuy-amount" type="number" placeholder="Ex: 50" value={rebuyAmount} onChange={e => setRebuyAmount(e.target.value)} className="col-span-3" />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button onClick={handleRebuyOrAddon}>Confirmar Adição</Button>
-                </DialogFooter>
-              </>
-            )}
-          </DialogContent>
-        </Dialog>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-8">
             <Card>
@@ -518,105 +447,178 @@ const CashGameManager: React.FC = () => {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Jogadores e Fichas na Mesa</CardTitle>
-                <CardDescription>Distribuição de fichas para cada jogador e totais.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Jogador</TableHead>
-                        <TableHead className="text-right">Buy-in Total</TableHead>
-                        {sortedChips.map((chip) => (
-                          <TableHead key={chip.id} className="text-center">
-                            <div className="flex items-center justify-center gap-2">
-                              <ChipIcon color={chip.color} />
-                              <span className="whitespace-nowrap">{chip.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
-                            </div>
-                          </TableHead>
-                        ))}
-                        <TableHead className="text-right">Ações</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {players.length === 0 ? (
+            <Dialog onOpenChange={(isOpen) => { if(!isOpen) {setPlayerForDetails(null); setRebuyAmount('')} }}>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Jogadores e Fichas na Mesa</CardTitle>
+                  <CardDescription>Distribuição de fichas para cada jogador e totais.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
                         <TableRow>
-                          <TableCell
-                            colSpan={3 + sortedChips.length}
-                            className="text-center text-muted-foreground h-24"
-                          >
-                            Nenhum jogador na mesa ainda.
-                          </TableCell>
+                          <TableHead>Jogador</TableHead>
+                          <TableHead className="text-right">Buy-in Total</TableHead>
+                          {sortedChips.map((chip) => (
+                            <TableHead key={chip.id} className="text-center">
+                              <div className="flex items-center justify-center gap-2">
+                                <ChipIcon color={chip.color} />
+                                <span className="whitespace-nowrap">{chip.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                              </div>
+                            </TableHead>
+                          ))}
+                          <TableHead className="text-right">Ações</TableHead>
                         </TableRow>
-                      ) : (
-                        players.map((player) => {
-                           const playerTotalBuyIn = player.transactions.reduce((acc, t) => acc + t.amount, 0);
-                           const playerTotalChips = getPlayerTotalChips(player);
-                           return (
-                              <TableRow key={player.id}>
-                                <TableCell className="font-medium">{player.name}</TableCell>
-                                <TableCell className="text-right font-mono">
-                                  {playerTotalBuyIn.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                </TableCell>
-                                {playerTotalChips.map((chip) => (
+                      </TableHeader>
+                      <TableBody>
+                        {players.length === 0 ? (
+                          <TableRow>
+                            <TableCell
+                              colSpan={3 + sortedChips.length}
+                              className="text-center text-muted-foreground h-24"
+                            >
+                              Nenhum jogador na mesa ainda.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          players.map((player) => {
+                             const playerTotalBuyIn = player.transactions.reduce((acc, t) => acc + t.amount, 0);
+                             const playerTotalChips = getPlayerTotalChips(player);
+                             return (
+                                <TableRow key={player.id}>
+                                  <TableCell className="font-medium">{player.name}</TableCell>
+                                  <TableCell className="text-right font-mono">
+                                    {playerTotalBuyIn.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                  </TableCell>
+                                  {playerTotalChips.map((chip) => (
+                                      <TableCell key={chip.chipId} className="text-center font-mono">
+                                      {chip.count}
+                                      </TableCell>
+                                  ))}
+                                  <TableCell className="text-right flex items-center justify-end gap-1">
+                                    <DialogTrigger asChild>
+                                        <Button variant="outline" size="sm" onClick={() => setPlayerForDetails(player)}>
+                                          <FileText className="h-4 w-4" />
+                                        </Button>
+                                    </DialogTrigger>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => removePlayer(player.id)}
+                                    >
+                                      <Trash2 className="h-4 w-4 text-red-500" />
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                             )
+                          })
+                        )}
+                      </TableBody>
+                      {players.length > 0 && (
+                        <UiTableFooter>
+                           <TableRow className="bg-muted/50 hover:bg-muted font-bold">
+                            <TableCell colSpan={2} className="text-right">
+                              Total de Fichas na Mesa
+                            </TableCell>
+                            {totalChipsOnTable.map(({chip, count}) => (
+                              <TableCell key={chip.id} className="text-center font-mono">
+                                {count}
+                              </TableCell>
+                            ))}
+                            <TableCell></TableCell>
+                          </TableRow>
+                          <TableRow className="bg-muted/80 hover:bg-muted font-bold">
+                            <TableCell colSpan={2} className="text-right">
+                              Valor Total na Mesa
+                            </TableCell>
+                            {totalValueOnTableByChip.map((value, index) => (
+                              <TableCell key={sortedChips[index].id} className="text-center font-mono">
+                                {value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              </TableCell>
+                            ))}
+                             <TableCell className="text-right font-mono">
+                                {grandTotalValueOnTable.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </TableCell>
+                          </TableRow>
+                        </UiTableFooter>
+                      )}
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <DialogContent className="max-w-4xl">
+                <DialogHeader>
+                  <DialogTitle>Detalhes de {playerForDetails?.name}</DialogTitle>
+                  <DialogDescription>
+                    Histórico de transações e contagem de fichas do jogador.
+                  </DialogDescription>
+                </DialogHeader>
+                
+                {playerForDetails && (
+                  <>
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Transação</TableHead>
+                                <TableHead className="text-right">Valor</TableHead>
+                                {sortedChips.map((chip) => (
+                                  <TableHead key={chip.id} className="text-center">
+                                    <div className="flex items-center justify-center gap-2">
+                                      <ChipIcon color={chip.color} />
+                                      <span className="whitespace-nowrap">{chip.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                                    </div>
+                                  </TableHead>
+                                ))}
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {playerForDetails.transactions.map(trans => (
+                                <TableRow key={trans.id}>
+                                    <TableCell className="font-medium capitalize">{trans.type} #{trans.id}</TableCell>
+                                    <TableCell className="text-right font-mono">{trans.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</TableCell>
+                                    {sortedChips.map(chip => {
+                                        const tChip = trans.chips.find(c => c.chipId === chip.id);
+                                        return <TableCell key={chip.id} className="text-center font-mono">{tChip?.count || 0}</TableCell>
+                                    })}
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                        <UiTableFooter>
+                             <TableRow className="bg-muted/50 hover:bg-muted font-bold">
+                                <TableCell colSpan={2} className="text-right">Total de Fichas</TableCell>
+                                {getPlayerTotalChips(playerForDetails).map((chip) => (
                                     <TableCell key={chip.chipId} className="text-center font-mono">
-                                    {chip.count}
+                                        {chip.count}
                                     </TableCell>
                                 ))}
-                                <TableCell className="text-right flex items-center justify-end gap-1">
-                                  <DialogTrigger asChild>
-                                      <Button variant="outline" size="sm" onClick={() => setPlayerForDetails(player)}>
-                                        <FileText className="h-4 w-4" />
-                                      </Button>
-                                  </DialogTrigger>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => removePlayer(player.id)}
-                                  >
-                                    <Trash2 className="h-4 w-4 text-red-500" />
-                                  </Button>
+                            </TableRow>
+                            <TableRow className="bg-muted/80 hover:bg-muted font-bold">
+                                <TableCell colSpan={2} className="text-right">Valor Total Investido</TableCell>
+                                <TableCell colSpan={sortedChips.length + 1} className="text-left font-mono">
+                                    {playerForDetails.transactions.reduce((acc, t) => acc + t.amount, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                 </TableCell>
-                              </TableRow>
-                           )
-                        })
-                      )}
-                    </TableBody>
-                    {players.length > 0 && (
-                      <UiTableFooter>
-                         <TableRow className="bg-muted/50 hover:bg-muted font-bold">
-                          <TableCell colSpan={2} className="text-right">
-                            Total de Fichas na Mesa
-                          </TableCell>
-                          {totalChipsOnTable.map(({chip, count}) => (
-                            <TableCell key={chip.id} className="text-center font-mono">
-                              {count}
-                            </TableCell>
-                          ))}
-                          <TableCell></TableCell>
-                        </TableRow>
-                        <TableRow className="bg-muted/80 hover:bg-muted font-bold">
-                          <TableCell colSpan={2} className="text-right">
-                            Valor Total na Mesa
-                          </TableCell>
-                          {totalValueOnTableByChip.map((value, index) => (
-                            <TableCell key={sortedChips[index].id} className="text-center font-mono">
-                              {value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                            </TableCell>
-                          ))}
-                           <TableCell className="text-right font-mono">
-                              {grandTotalValueOnTable.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                          </TableCell>
-                        </TableRow>
-                      </UiTableFooter>
-                    )}
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
+                            </TableRow>
+                        </UiTableFooter>
+                    </Table>
+
+                    <Separator className='my-4'/>
+
+                    <div className="grid gap-4 py-4">
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="rebuy-amount" className="text-right">Adicionar Valor (R$)</Label>
+                        <Input id="rebuy-amount" type="number" placeholder="Ex: 50" value={rebuyAmount} onChange={e => setRebuyAmount(e.target.value)} className="col-span-3" />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button onClick={handleRebuyOrAddon}>Confirmar Adição</Button>
+                    </DialogFooter>
+                  </>
+                )}
+              </DialogContent>
+            </Dialog>
+
           </div>
 
           <div className="space-y-8">
