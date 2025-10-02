@@ -37,7 +37,7 @@ import {
   Calculator,
   UserPlus,
   ArrowLeft,
-  X,
+  Coins,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -74,68 +74,99 @@ const ChipIcon = ({ color, className }: { color: string; className?: string }) =
 );
 
 const distributeChips = (buyIn: number, availableChips: Chip[]): { chipId: number; count: number }[] => {
-  let remainingAmount = buyIn;
-  const sortedChips = [...availableChips].sort((a, b) => b.value - a.value);
-  const distribution: Map<number, number> = new Map(sortedChips.map(c => [c.id, 0]));
+    let remainingAmount = buyIn;
+    const sortedChips = [...availableChips].sort((a, b) => b.value - a.value);
+    const distribution: Map<number, number> = new Map(sortedChips.map(c => [c.id, 0]));
 
-  // 1. Tenta alocar pelo menos uma de cada ficha para garantir variedade, se possível
-  for (const chip of sortedChips.slice().reverse()) { // itera do menor para o maior
-    if (remainingAmount >= chip.value * 2) { // Garante que há valor suficiente para não comprometer a distribuição
-      distribution.set(chip.id, (distribution.get(chip.id) || 0) + 1);
-      remainingAmount = parseFloat((remainingAmount - chip.value).toFixed(2));
+    // 1. Tenta alocar pelo menos uma de cada ficha para garantir variedade, se possível
+    const smallChipsFirst = [...sortedChips].sort((a, b) => a.value - b.value);
+    for (const chip of smallChipsFirst) {
+        if (remainingAmount >= chip.value * Math.max(2, (1 / (chip.value / buyIn))/2) && chip.value < (buyIn/4)) { 
+            const count = 1;
+            distribution.set(chip.id, (distribution.get(chip.id) || 0) + count);
+            remainingAmount = parseFloat((remainingAmount - chip.value * count).toFixed(2));
+        }
     }
-  }
 
-  // 2. Distribui o restante de forma mais equilibrada
-  const distributionPercentages: { [key: number]: number } = {};
-  if(sortedChips.find(c => c.value === 10)) distributionPercentages[sortedChips.find(c => c.value === 10)!.id] = 0.5;
-  if(sortedChips.find(c => c.value === 1)) distributionPercentages[sortedChips.find(c => c.value === 1)!.id] = 0.3;
-  if(sortedChips.find(c => c.value === 0.5)) distributionPercentages[sortedChips.find(c => c.value === 0.5)!.id] = 0.15;
-  if(sortedChips.find(c => c.value === 0.25)) distributionPercentages[sortedChips.find(c => c.value === 0.25)!.id] = 0.05;
+    // 2. Distribui o restante de forma mais equilibrada
+    for (const chip of sortedChips) {
+        if (remainingAmount <= 0) break;
+        if(chip.value > remainingAmount) continue;
 
-  for (const chip of sortedChips) {
-      if (remainingAmount <= 0) break;
-      const targetAmount = remainingAmount * (distributionPercentages[chip.id] || 0);
-      let count = Math.floor(targetAmount / chip.value);
+        let allocationPercentage = 0;
+        if (chip.value >= 10) allocationPercentage = 0.5;
+        else if (chip.value >= 1) allocationPercentage = 0.3;
+        else allocationPercentage = 0.1;
+
+        let targetValueForChip = remainingAmount * allocationPercentage;
+        
+        let count = Math.floor(targetValueForChip / chip.value);
+        
+        // Tenta arredondar para o múltiplo de 5 mais próximo se for ficha de centavos
+        if(chip.value < 1 && count > 5) {
+            count = Math.round(count / 5) * 5;
+        }
+
+        if (count > 0) {
+          const amountToDistribute = count * chip.value;
+          if(remainingAmount >= amountToDistribute){
+            distribution.set(chip.id, (distribution.get(chip.id) || 0) + count);
+            remainingAmount = parseFloat((remainingAmount - amountToDistribute).toFixed(2));
+          }
+        }
+    }
+    
+    // 3. Preenche o restante com a lógica "greedy" para garantir que o valor bata
+    for (const chip of sortedChips) {
+      if (remainingAmount < chip.value) continue;
       
-      // Tenta arredondar para o múltiplo de 5 mais próximo se for ficha de centavos
-      if(chip.value < 1 && count > 5) {
-          count = Math.round(count / 5) * 5;
-      }
-
-      if (count > 0) {
-        distribution.set(chip.id, (distribution.get(chip.id) || 0) + count);
-        remainingAmount = parseFloat((remainingAmount - count * chip.value).toFixed(2));
-      }
-  }
-  
-  // 3. Preenche o restante com a lógica "greedy" para garantir que o valor bata
-  for (const chip of sortedChips) {
-    if (remainingAmount >= chip.value) {
       const count = Math.floor(remainingAmount / chip.value);
       if (count > 0) {
         distribution.set(chip.id, (distribution.get(chip.id) || 0) + count);
         remainingAmount = parseFloat((remainingAmount - count * chip.value).toFixed(2));
       }
     }
-  }
+    
+    // 4. Se ainda sobrar, tenta adicionar nas menores fichas
+    if (remainingAmount > 0.01) {
+        for (const chip of smallChipsFirst) {
+             if (remainingAmount < chip.value) continue;
+             const count = Math.floor(remainingAmount / chip.value);
+             if (count > 0) {
+                distribution.set(chip.id, (distribution.get(chip.id) || 0) + count);
+                remainingAmount = parseFloat((remainingAmount - count * chip.value).toFixed(2));
+             }
+        }
+    }
 
-  // 4. Validação final
-  const finalDistribution = Array.from(distribution.entries()).map(([chipId, count]) => ({ chipId, count }));
-  const totalDistributedValue = finalDistribution.reduce((acc, dist) => {
-    const chip = availableChips.find(c => c.id === dist.chipId);
-    return acc + (chip ? chip.value * dist.count : 0);
-  }, 0);
-  
-  if (Math.abs(totalDistributedValue - buyIn) > 0.01) {
-    console.warn("Complex distribution failed. Value mismatch.", {totalDistributedValue, buyIn});
-    return []; // Falha na distribuição
-  }
 
-  return sortedChips.map(chip => ({
-    chipId: chip.id,
-    count: distribution.get(chip.id) || 0,
-  }));
+    // 5. Validação final
+    const finalDistribution = Array.from(distribution.entries()).map(([chipId, count]) => ({ chipId, count }));
+    const totalDistributedValue = finalDistribution.reduce((acc, dist) => {
+        const chip = availableChips.find(c => c.id === dist.chipId);
+        return acc + (chip ? chip.value * dist.count : 0);
+    }, 0);
+    
+    if (Math.abs(totalDistributedValue - buyIn) > 0.01) {
+        console.warn("Complex distribution failed. Value mismatch.", {totalDistributedValue, buyIn});
+        // Fallback para a distribuição simples
+        const greedyDistribution: { chipId: number; count: number }[] = [];
+        let greedyAmount = buyIn;
+        for (const chip of sortedChips) {
+            if (greedyAmount >= chip.value) {
+                const count = Math.floor(greedyAmount / chip.value);
+                greedyDistribution.push({ chipId: chip.id, count });
+                greedyAmount = parseFloat((greedyAmount - count * chip.value).toFixed(2));
+            }
+        }
+        if (Math.abs(greedyAmount) > 0.01) return []; // Falha na distribuição
+        return greedyDistribution;
+    }
+
+    return sortedChips.map(chip => ({
+        chipId: chip.id,
+        count: distribution.get(chip.id) || 0,
+    }));
 };
 
 
@@ -148,6 +179,8 @@ const CashGameManager: React.FC = () => {
   const [newPlayerBuyIn, setNewPlayerBuyIn] = useState('');
   const [isAddChipOpen, setIsAddChipOpen] = useState(false);
   const [newChip, setNewChip] = useState({ name: '', value: '', color: '#ffffff' });
+  const [rebuyAmount, setRebuyAmount] = useState('');
+  const [playerForRebuy, setPlayerForRebuy] = useState<Player | null>(null);
 
   const sortedChips = useMemo(() => [...chips].sort((a, b) => a.value - b.value), [chips]);
 
@@ -197,6 +230,49 @@ const CashGameManager: React.FC = () => {
     setNewPlayerName('');
     setNewPlayerBuyIn('');
   }, [newPlayerName, newPlayerBuyIn, chips, players, toast]);
+
+  const handleRebuyOrAddon = useCallback(() => {
+    if (!playerForRebuy || !rebuyAmount) {
+        toast({ variant: 'destructive', title: 'Erro', description: 'Selecione um jogador e insira um valor.' });
+        return;
+    }
+    const amount = parseFloat(rebuyAmount);
+    if(isNaN(amount) || amount <= 0 || amount % 5 !== 0) {
+        toast({ variant: 'destructive', title: 'Valor Inválido', description: 'O valor deve ser um número positivo e múltiplo de 5.' });
+        return;
+    }
+    
+    const newChipsDistribution = distributeChips(amount, chips);
+    if(newChipsDistribution.length === 0) {
+        toast({ variant: 'destructive', title: 'Erro na Distribuição', description: `Não foi possível distribuir R$${amount.toFixed(2)}.` });
+        return;
+    }
+
+    setPlayers(prevPlayers => prevPlayers.map(p => {
+        if(p.id === playerForRebuy.id) {
+            const updatedChips = [...p.chips];
+            newChipsDistribution.forEach(newChip => {
+                const existingChipIndex = updatedChips.findIndex(c => c.chipId === newChip.chipId);
+                if (existingChipIndex !== -1) {
+                    updatedChips[existingChipIndex].count += newChip.count;
+                } else {
+                    updatedChips.push(newChip);
+                }
+            });
+
+            return {
+                ...p,
+                buyIn: p.buyIn + amount,
+                chips: updatedChips,
+            };
+        }
+        return p;
+    }));
+
+    toast({ title: 'Transação Concluída!', description: `R$${amount.toFixed(2)} adicionado para ${playerForRebuy.name}.` });
+    setPlayerForRebuy(null);
+    setRebuyAmount('');
+  }, [playerForRebuy, rebuyAmount, chips, toast]);
 
   const removePlayer = (id: number) => {
     setPlayers(players.filter(p => p.id !== id));
@@ -291,6 +367,25 @@ const CashGameManager: React.FC = () => {
           </div>
         </div>
 
+        <Dialog onOpenChange={(isOpen) => { if(!isOpen) setPlayerForRebuy(null) }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Rebuy / Add-on para {playerForRebuy?.name}</DialogTitle>
+              <DialogDescription>
+                Insira o valor a ser adicionado. As fichas serão calculadas e somadas ao total do jogador.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="rebuy-amount" className="text-right">Valor (R$)</Label>
+                <Input id="rebuy-amount" type="number" placeholder="Ex: 50" value={rebuyAmount} onChange={e => setRebuyAmount(e.target.value)} className="col-span-3" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={handleRebuyOrAddon}>Confirmar Adição</Button>
+            </DialogFooter>
+          </DialogContent>
+        
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-8">
             <Card>
@@ -370,7 +465,12 @@ const CashGameManager: React.FC = () => {
                                 </TableCell>
                               );
                             })}
-                            <TableCell className="text-right">
+                            <TableCell className="text-right flex items-center justify-end gap-1">
+                              <DialogTrigger asChild>
+                                  <Button variant="outline" size="sm" onClick={() => setPlayerForRebuy(player)}>
+                                    <Coins className="h-4 w-4" />
+                                  </Button>
+                              </DialogTrigger>
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -547,6 +647,8 @@ const CashGameManager: React.FC = () => {
             </Card>
           </div>
         </div>
+
+        </Dialog>
       </div>
     </div>
   );
