@@ -68,6 +68,50 @@ const CashGameManager: React.FC = () => {
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerBuyIn, setNewPlayerBuyIn] = useState('');
 
+  const distributeChips = useCallback((buyIn: number, availableChips: Chip[]): { chipId: number; count: number }[] => {
+    let remainingAmount = buyIn;
+    const distribution: { chipId: number; count: number }[] = [];
+    const sortedChips = [...availableChips].sort((a, b) => b.value - a.value);
+  
+    // Tenta distribuir as fichas de forma balanceada
+    for (const chip of sortedChips) {
+      if (remainingAmount <= 0) break;
+      
+      // Heurística simples: tenta dar pelo menos umas 10-20 fichas de valores menores
+      // e menos fichas de valores maiores.
+      const targetCount = chip.value < 1 ? 20 : (chip.value < 10 ? 10 : 5);
+      let count = Math.min(targetCount, Math.floor(remainingAmount / chip.value));
+      
+      if (count > 0) {
+        distribution.push({ chipId: chip.id, count });
+        remainingAmount -= count * chip.value;
+      }
+    }
+    
+    // Se ainda sobrar valor, preenche com as maiores fichas possíveis
+    remainingAmount = buyIn - distribution.reduce((sum, d) => {
+        const chip = availableChips.find(c => c.id === d.chipId);
+        return sum + (chip ? chip.value * d.count : 0);
+    }, 0);
+
+    for (const chip of sortedChips) {
+        if (remainingAmount <= 0.001) break; // Lida com imprecisões de float
+        const existingEntry = distribution.find(d => d.chipId === chip.id);
+        const canAddCount = Math.floor(remainingAmount / chip.value);
+
+        if(canAddCount > 0) {
+            if(existingEntry) {
+                existingEntry.count += canAddCount;
+            } else {
+                distribution.push({chipId: chip.id, count: canAddCount})
+            }
+            remainingAmount -= canAddCount * chip.value;
+        }
+    }
+  
+    return distribution;
+  }, []);
+
   const handleAddPlayer = () => {
     if (!newPlayerName || !newPlayerBuyIn) {
       toast({
@@ -86,18 +130,37 @@ const CashGameManager: React.FC = () => {
       });
       return;
     }
+    
+    const chipDistribution = distributeChips(buyInValue, chips);
+    const totalDistributedValue = chipDistribution.reduce((sum, dist) => {
+        const chip = chips.find(c => c.id === dist.chipId);
+        return sum + (chip ? chip.value * dist.count : 0);
+    }, 0);
+
+    if (Math.abs(totalDistributedValue - buyInValue) > 0.01) {
+        toast({
+            variant: "destructive",
+            title: "Erro na distribuição",
+            description: `Não foi possível distribuir as fichas para o valor de R$${buyInValue.toFixed(2)}. Tente um valor diferente ou ajuste as fichas disponíveis.`
+        })
+        return;
+    }
 
     const newPlayer: Player = {
       id: players.length > 0 ? Math.max(...players.map(p => p.id)) + 1 : 1,
       name: newPlayerName,
       buyIn: buyInValue,
-      chips: [],
+      chips: chipDistribution,
     };
     
-    // Placeholder for chip distribution logic
+    const distributionText = chipDistribution.map(d => {
+        const chip = chips.find(c => c.id === d.chipId);
+        return `${d.count}x ${chip?.name || 'Ficha'}`;
+    }).join(', ');
+    
     toast({
         title: 'Jogador Adicionado!',
-        description: `${newPlayer.name} entrou na mesa com R$${buyInValue.toFixed(2)}. A distribuição de fichas será implementada em breve.`
+        description: `${newPlayer.name} entrou na mesa com R$${buyInValue.toFixed(2)}. Fichas: ${distributionText}`
     })
 
     setPlayers([...players, newPlayer]);
