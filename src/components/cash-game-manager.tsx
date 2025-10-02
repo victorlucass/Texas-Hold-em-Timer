@@ -250,15 +250,17 @@ const CashGameManager: React.FC = () => {
 
     setPlayers(prevPlayers => prevPlayers.map(p => {
         if(p.id === playerForRebuy.id) {
-            const updatedChips = [...p.chips];
+            // Cria um mapa com a distribuição de fichas atual do jogador
+            const updatedChipsMap = new Map(p.chips.map(c => [c.chipId, c.count]));
+
+            // Adiciona as novas fichas ao mapa, somando se a ficha já existir
             newChipsDistribution.forEach(newChip => {
-                const existingChipIndex = updatedChips.findIndex(c => c.chipId === newChip.chipId);
-                if (existingChipIndex !== -1) {
-                    updatedChips[existingChipIndex].count += newChip.count;
-                } else {
-                    updatedChips.push(newChip);
-                }
+                const existingCount = updatedChipsMap.get(newChip.chipId) || 0;
+                updatedChipsMap.set(newChip.chipId, existingCount + newChip.count);
             });
+            
+            // Converte o mapa de volta para o formato de array
+            const updatedChips = Array.from(updatedChipsMap.entries()).map(([chipId, count]) => ({ chipId, count }));
 
             return {
                 ...p,
@@ -367,7 +369,7 @@ const CashGameManager: React.FC = () => {
           </div>
         </div>
 
-        <Dialog onOpenChange={(isOpen) => { if(!isOpen) setPlayerForRebuy(null) }}>
+        <Dialog onOpenChange={(isOpen) => { if(!isOpen) {setPlayerForRebuy(null); setRebuyAmount('')} }}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Rebuy / Add-on para {playerForRebuy?.name}</DialogTitle>
