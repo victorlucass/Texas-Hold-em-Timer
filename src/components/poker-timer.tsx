@@ -1,19 +1,16 @@
 'use client';
 
 import type { BlindLevel, Player, RoundWinner } from '@/lib/types';
-import { handlePokerCoach } from '@/lib/actions';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   Coins,
   Copy,
-  MessageCircleQuestion,
   Pause,
   Play,
   RefreshCw,
   Settings,
   Trash2,
   Users,
-  Wand2,
   PlusCircle,
   XCircle,
   History,
@@ -24,8 +21,7 @@ import {
   Minimize,
   Sparkles
 } from 'lucide-react';
-import React, { useCallback, useEffect, useState, useTransition, useActionState, useRef } from 'react';
-import { useFormStatus } from 'react-dom';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
@@ -55,7 +51,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Skeleton } from './ui/skeleton';
@@ -102,16 +97,6 @@ const SettingsSchema = z.object({
   roundLength: z.coerce.number().min(1, 'A duração da rodada deve ser de pelo menos 1 minuto'),
 });
 
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <Button type="submit" disabled={pending} className="w-full bg-accent text-accent-foreground hover:bg-accent/90">
-      {pending ? 'Pensando...' : 'Perguntar à IA'}
-      <Wand2 className="ml-2 h-4 w-4" />
-    </Button>
-  );
-}
-
 export default function PokerTimer() {
   const { toast } = useToast();
   const [isMounted, setIsMounted] = useState(false);
@@ -140,11 +125,6 @@ export default function PokerTimer() {
   const [roundHistory, setRoundHistory] = useState<RoundWinner[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
-
-  const [coachAnswer, setCoachAnswer] = useState('');
-  const [isPending, startTransition] = useTransition();
-
-  const [formState, formAction] = useActionState(handlePokerCoach, { message: '', error: '' });
 
   // Prize split state
   const [splitPrize, setSplitPrize] = useState(true);
@@ -178,27 +158,17 @@ export default function PokerTimer() {
     const totalBuyIns = players.length * buyIn;
     const totalRebuys = players.reduce((acc, p) => acc + p.rebuys, 0);
     const totalAddons = players.reduce((acc, p) => acc + p.addons, 0);
-    setPrizePool(totalBuyIns + totalRebuys + totalAddons);
-  }, [players, buyIn]);
+    setPrizePool(totalBuyIns + totalRebuys * rebuyValue + totalAddons * addonValue);
+  }, [players, buyIn, rebuyValue, addonValue]);
 
 
   useEffect(() => {
     calculatePrizePool();
-  }, [players, buyIn, calculatePrizePool]);
+  }, [players, buyIn, rebuyValue, addonValue, calculatePrizePool]);
 
-
-  useEffect(() => {
-    if (!formState.error && !formState.message) return;
-    if (formState.error) {
-      toast({ variant: 'destructive', title: 'Erro', description: formState.error });
-    } else if (formState.answer) {
-        setCoachAnswer(formState.answer);
-    }
-  }, [formState, toast]);
 
   const playLevelUpSound = () => {
-    const audio = new Audio('/level-up.mp3');
-    audio.play().catch(error => console.error("Erro ao tocar o áudio:", error));
+    audioPlayerRef.current?.play().catch(error => console.error("Erro ao tocar o áudio:", error));
   };
 
   const levelUp = useCallback(() => {
@@ -292,13 +262,7 @@ export default function PokerTimer() {
 
   const handleRebuy = (playerId: number, count: number) => {
     setPlayers(
-      players.map((p) => {
-        if (p.id === playerId) {
-          const rebuyAmount = rebuyValue * count;
-          return { ...p, rebuys: p.rebuys + rebuyAmount };
-        }
-        return p;
-      })
+      players.map((p) => (p.id === playerId ? { ...p, rebuys: p.rebuys + count } : p))
     );
     const playerName = players.find((p) => p.id === playerId)?.name;
     const chips = (rebuyChips * count).toLocaleString('pt-BR');
@@ -308,12 +272,7 @@ export default function PokerTimer() {
 
   const handleAddon = (playerId: number) => {
     setPlayers(
-      players.map((p) => {
-        if (p.id === playerId) {
-          return { ...p, addons: p.addons + addonValue };
-        }
-        return p;
-      })
+      players.map((p) => (p.id === playerId ? { ...p, addons: p.addons + 1 } : p))
     );
     const playerName = players.find((p) => p.id === playerId)?.name;
     toast({ description: `Add-on (${addonChips.toLocaleString('pt-BR')} fichas) adicionado para ${playerName}.` });
@@ -329,8 +288,8 @@ export default function PokerTimer() {
         // Subtract buy-in for this round
         newBalance -= buyIn;
         // Subtract rebuys and addons made in this round
-        newBalance -= p.rebuys;
-        newBalance -= p.addons;
+        newBalance -= p.rebuys * rebuyValue;
+        newBalance -= p.addons * addonValue;
 
         if (splitPrize && winner1 && winner2 && winner3) {
             const prize1 = prizePool * (firstPlacePercent / 100);
@@ -578,13 +537,14 @@ export default function PokerTimer() {
               </div>
 
               {/* Prize Pool e Jogadores */}
-              <Card className="border-primary shadow-lg shadow-primary/10">
+              <div className="md:col-span-1 md:row-span-2">
+              <Card className="border-primary shadow-lg shadow-primary/10 h-full">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 font-headline text-primary">
                     <Coins /> Gerenciamento do Jogo
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="flex flex-col h-[calc(100%-78px)]">
                   <Form {...tournamentDetailsForm}>
                     <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
                       <div className="grid grid-cols-3 gap-4">
@@ -727,7 +687,7 @@ export default function PokerTimer() {
                             </div>
                         </div>
                   </div>
-                  <div className="mt-6 text-center">
+                  <div className="mt-auto text-center">
                     <p className="text-lg text-gray-400">Prêmio da Rodada</p>
                     <p className="font-headline text-5xl font-bold text-accent">
                       R$ {prizePool.toLocaleString('pt-BR')}
@@ -804,38 +764,7 @@ export default function PokerTimer() {
                   </Dialog>
                 </CardContent>
               </Card>
-
-              {/* AI Poker Coach */}
-              <Card className="border-secondary shadow-lg">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 font-headline text-gray-300">
-                    <MessageCircleQuestion /> AI Poker Coach
-                  </CardTitle>
-                  <CardDescription>
-                    Tem alguma dúvida sobre poker? Pergunte ao nosso especialista de IA.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <form action={(formData) => {
-                    setCoachAnswer('');
-                    formAction(formData);
-                  }}>
-                    <Textarea
-                      name="question"
-                      placeholder="Ex: 'O que é um 'straddle'?' ou 'Qual a ordem de força das mãos no poker?'"
-                      className="mb-4"
-                      rows={4}
-                    />
-                    <SubmitButton />
-                  </form>
-                  {isPending && <p className="mt-4 text-sm text-muted-foreground">Aguardando resposta da IA...</p>}
-                  {coachAnswer && (
-                    <div className="mt-4 p-4 bg-muted/50 rounded-lg">
-                      <p className="text-sm">{coachAnswer}</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+              </div>
             </div>
             
             <div className="mt-4 md:mt-8 flex justify-between items-center flex-wrap gap-2">
