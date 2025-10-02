@@ -38,6 +38,7 @@ import {
   UserPlus,
   ArrowLeft,
   Coins,
+  FileText,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -52,11 +53,17 @@ interface Chip {
   name: string;
 }
 
+interface PlayerTransaction {
+    id: number;
+    type: 'buy-in' | 'rebuy' | 'add-on';
+    amount: number;
+    chips: { chipId: number; count: number }[];
+}
+
 interface Player {
   id: number;
   name: string;
-  buyIn: number;
-  chips: { chipId: number; count: number }[];
+  transactions: PlayerTransaction[];
 }
 
 const initialChips: Chip[] = [
@@ -139,7 +146,6 @@ const distributeChips = (buyIn: number, availableChips: Chip[]): { chipId: numbe
         }
     }
 
-
     // 5. Validação final
     const finalDistribution = Array.from(distribution.entries()).map(([chipId, count]) => ({ chipId, count }));
     const totalDistributedValue = finalDistribution.reduce((acc, dist) => {
@@ -166,7 +172,7 @@ const distributeChips = (buyIn: number, availableChips: Chip[]): { chipId: numbe
     return sortedChips.map(chip => ({
         chipId: chip.id,
         count: distribution.get(chip.id) || 0,
-    }));
+    })).sort((a,b) => a.chipId - b.chipId);
 };
 
 
@@ -180,7 +186,7 @@ const CashGameManager: React.FC = () => {
   const [isAddChipOpen, setIsAddChipOpen] = useState(false);
   const [newChip, setNewChip] = useState({ name: '', value: '', color: '#ffffff' });
   const [rebuyAmount, setRebuyAmount] = useState('');
-  const [playerForRebuy, setPlayerForRebuy] = useState<Player | null>(null);
+  const [playerForDetails, setPlayerForDetails] = useState<Player | null>(null);
 
   const sortedChips = useMemo(() => [...chips].sort((a, b) => a.value - b.value), [chips]);
 
@@ -217,8 +223,12 @@ const CashGameManager: React.FC = () => {
     const newPlayer: Player = {
       id: players.length > 0 ? Math.max(...players.map(p => p.id)) + 1 : 1,
       name: newPlayerName,
-      buyIn: buyInValue,
-      chips: chipDistribution,
+      transactions: [{
+          id: 1,
+          type: 'buy-in',
+          amount: buyInValue,
+          chips: chipDistribution,
+      }],
     };
     
     toast({
@@ -232,7 +242,7 @@ const CashGameManager: React.FC = () => {
   }, [newPlayerName, newPlayerBuyIn, chips, players, toast]);
 
   const handleRebuyOrAddon = useCallback(() => {
-    if (!playerForRebuy || !rebuyAmount) {
+    if (!playerForDetails || !rebuyAmount) {
         toast({ variant: 'destructive', title: 'Erro', description: 'Selecione um jogador e insira um valor.' });
         return;
     }
@@ -247,34 +257,30 @@ const CashGameManager: React.FC = () => {
         toast({ variant: 'destructive', title: 'Erro na Distribuição', description: `Não foi possível distribuir R$${amount.toFixed(2)}.` });
         return;
     }
+    
+    const newTransaction: PlayerTransaction = {
+        id: (playerForDetails.transactions.length > 0 ? Math.max(...playerForDetails.transactions.map(t => t.id)) : 0) + 1,
+        type: 'rebuy',
+        amount,
+        chips: newChipsDistribution,
+    }
 
     setPlayers(prevPlayers => prevPlayers.map(p => {
-        if(p.id === playerForRebuy.id) {
-            // Cria um mapa com a distribuição de fichas atual do jogador
-            const updatedChipsMap = new Map(p.chips.map(c => [c.chipId, c.count]));
-
-            // Adiciona as novas fichas ao mapa, somando se a ficha já existir
-            newChipsDistribution.forEach(newChip => {
-                const existingCount = updatedChipsMap.get(newChip.chipId) || 0;
-                updatedChipsMap.set(newChip.chipId, existingCount + newChip.count);
-            });
-            
-            // Converte o mapa de volta para o formato de array
-            const updatedChips = Array.from(updatedChipsMap.entries()).map(([chipId, count]) => ({ chipId, count }));
-
+        if(p.id === playerForDetails.id) {
             return {
                 ...p,
-                buyIn: p.buyIn + amount,
-                chips: updatedChips,
+                transactions: [...p.transactions, newTransaction],
             };
         }
         return p;
     }));
+    
+    // Atualiza o state local para refletir a nova transação no modal
+    setPlayerForDetails(prev => prev ? { ...prev, transactions: [...prev.transactions, newTransaction] } : null);
 
-    toast({ title: 'Transação Concluída!', description: `R$${amount.toFixed(2)} adicionado para ${playerForRebuy.name}.` });
-    setPlayerForRebuy(null);
+    toast({ title: 'Transação Concluída!', description: `R$${amount.toFixed(2)} adicionado para ${playerForDetails.name}.` });
     setRebuyAmount('');
-  }, [playerForRebuy, rebuyAmount, chips, toast]);
+  }, [playerForDetails, rebuyAmount, chips, toast]);
 
   const removePlayer = (id: number) => {
     setPlayers(players.filter(p => p.id !== id));
@@ -320,37 +326,40 @@ const CashGameManager: React.FC = () => {
   }
 
   const totalBuyIn = useMemo(() => {
-    return players.reduce((acc, player) => acc + player.buyIn, 0);
+    return players.reduce((total, player) => 
+        total + player.transactions.reduce((subTotal, trans) => subTotal + trans.amount, 0)
+    , 0);
   }, [players]);
 
-  const totalChipsByType = useMemo(() => {
-    const totals: { [key: number]: number } = {};
-    for (const chip of sortedChips) {
-      totals[chip.id] = 0;
-    }
-    for (const player of players) {
-      for (const playerChip of player.chips) {
-        if (totals[playerChip.chipId] !== undefined) {
-          totals[playerChip.chipId] += playerChip.count;
-        }
-      }
-    }
-    return totals;
-  }, [players, sortedChips]);
+  const getPlayerTotalChips = useCallback((player: Player) => {
+    const playerTotalChips = new Map<number, number>();
+    player.transactions.forEach(trans => {
+        trans.chips.forEach(chip => {
+            playerTotalChips.set(chip.chipId, (playerTotalChips.get(chip.chipId) || 0) + chip.count);
+        });
+    });
+    return sortedChips.map(chip => ({ chipId: chip.id, count: playerTotalChips.get(chip.id) || 0 }));
+  }, [sortedChips]);
 
-  const totalValueByType = useMemo(() => {
-    const totals: { [key: number]: number } = {};
-     for (const chip of sortedChips) {
-      const chipValue = chip.value;
-      const totalCount = totalChipsByType[chip.id] || 0;
-      totals[chip.id] = totalCount * chipValue;
-    }
-    return totals;
-  }, [sortedChips, totalChipsByType]);
+  const totalChipsOnTable = useMemo(() => {
+    const totals = new Map<number, number>();
+    players.forEach(player => {
+        const playerChips = getPlayerTotalChips(player);
+        playerChips.forEach(chip => {
+            totals.set(chip.chipId, (totals.get(chip.chipId) || 0) + chip.count);
+        });
+    });
+    return sortedChips.map(chip => totals.get(chip.id) || 0);
+  }, [players, sortedChips, getPlayerTotalChips]);
+  
+  const totalValueOnTableByChip = useMemo(() => {
+    return sortedChips.map((chip, index) => chip.value * totalChipsOnTable[index]);
+  }, [sortedChips, totalChipsOnTable]);
 
-  const grandTotalValue = useMemo(() => {
-      return Object.values(totalValueByType).reduce((acc, value) => acc + value, 0);
-  },[totalValueByType]);
+  const grandTotalValueOnTable = useMemo(() => {
+      return totalValueOnTableByChip.reduce((acc, value) => acc + value, 0);
+  },[totalValueOnTableByChip]);
+
 
   return (
     <div className="min-h-screen w-full bg-background p-4 md:p-8">
@@ -369,23 +378,78 @@ const CashGameManager: React.FC = () => {
           </div>
         </div>
 
-        <Dialog onOpenChange={(isOpen) => { if(!isOpen) {setPlayerForRebuy(null); setRebuyAmount('')} }}>
-          <DialogContent>
+        <Dialog onOpenChange={(isOpen) => { if(!isOpen) {setPlayerForDetails(null); setRebuyAmount('')} }}>
+          <DialogContent className="max-w-4xl">
             <DialogHeader>
-              <DialogTitle>Rebuy / Add-on para {playerForRebuy?.name}</DialogTitle>
+              <DialogTitle>Detalhes de {playerForDetails?.name}</DialogTitle>
               <DialogDescription>
-                Insira o valor a ser adicionado. As fichas serão calculadas e somadas ao total do jogador.
+                Histórico de transações e contagem de fichas do jogador.
               </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="rebuy-amount" className="text-right">Valor (R$)</Label>
-                <Input id="rebuy-amount" type="number" placeholder="Ex: 50" value={rebuyAmount} onChange={e => setRebuyAmount(e.target.value)} className="col-span-3" />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button onClick={handleRebuyOrAddon}>Confirmar Adição</Button>
-            </DialogFooter>
+            
+            {playerForDetails && (
+              <>
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead>Transação</TableHead>
+                            <TableHead className="text-right">Valor</TableHead>
+                            {sortedChips.map((chip) => (
+                              <TableHead key={chip.id} className="text-center">
+                                <div className="flex items-center justify-center gap-2">
+                                  <ChipIcon color={chip.color} />
+                                  <span className="whitespace-nowrap">{chip.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                                </div>
+                              </TableHead>
+                            ))}
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {playerForDetails.transactions.map(trans => (
+                            <TableRow key={trans.id}>
+                                <TableCell className="font-medium capitalize">{trans.type} #{trans.id}</TableCell>
+                                <TableCell className="text-right font-mono">{trans.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</TableCell>
+                                {sortedChips.map(chip => {
+                                    const tChip = trans.chips.find(c => c.chipId === chip.id);
+                                    return <TableCell key={chip.id} className="text-center font-mono">{tChip?.count || 0}</TableCell>
+                                })}
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                    <UiTableFooter>
+                         <TableRow className="bg-muted/50 hover:bg-muted font-bold">
+                            <TableCell colSpan={2} className="text-right">Total de Fichas</TableCell>
+                            {getPlayerTotalChips(playerForDetails).map((chip) => (
+                                <TableCell key={chip.chipId} className="text-center font-mono">
+                                    {chip.count}
+                                </TableCell>
+                            ))}
+                        </TableRow>
+                        <TableRow className="bg-muted/80 hover:bg-muted font-bold">
+                            <TableCell colSpan={2} className="text-right">Valor Total</TableCell>
+                            {getPlayerTotalChips(playerForDetails).map((chip) => {
+                                const chipInfo = sortedChips.find(c => c.id === chip.chipId);
+                                return (
+                                <TableCell key={chip.chipId} className="text-center font-mono">
+                                    {(chip.count * (chipInfo?.value || 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                </TableCell>
+                                )
+                            })}
+                        </TableRow>
+                    </UiTableFooter>
+                </Table>
+
+                <div className="grid gap-4 py-4">
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="rebuy-amount" className="text-right">Adicionar Valor (R$)</Label>
+                    <Input id="rebuy-amount" type="number" placeholder="Ex: 50" value={rebuyAmount} onChange={e => setRebuyAmount(e.target.value)} className="col-span-3" />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button onClick={handleRebuyOrAddon}>Confirmar Adição</Button>
+                </DialogFooter>
+              </>
+            )}
           </DialogContent>
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -428,7 +492,7 @@ const CashGameManager: React.FC = () => {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Jogador</TableHead>
-                        <TableHead className="text-right">Buy-in</TableHead>
+                        <TableHead className="text-right">Buy-in Total</TableHead>
                         {sortedChips.map((chip) => (
                           <TableHead key={chip.id} className="text-center">
                             <div className="flex items-center justify-center gap-2">
@@ -451,64 +515,63 @@ const CashGameManager: React.FC = () => {
                           </TableCell>
                         </TableRow>
                       ) : (
-                        players.map((player) => (
-                          <TableRow key={player.id}>
-                            <TableCell className="font-medium">{player.name}</TableCell>
-                            <TableCell className="text-right font-mono">
-                              {player.buyIn.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                            </TableCell>
-                            {sortedChips.map((chip) => {
-                              const pChip = player.chips.find(
-                                (c) => c.chipId === chip.id
-                              );
-                              return (
-                                <TableCell key={chip.id} className="text-center font-mono">
-                                  {pChip?.count || 0}
+                        players.map((player) => {
+                           const playerTotalBuyIn = player.transactions.reduce((acc, t) => acc + t.amount, 0);
+                           const playerTotalChips = getPlayerTotalChips(player);
+                           return (
+                              <TableRow key={player.id}>
+                                <TableCell className="font-medium">{player.name}</TableCell>
+                                <TableCell className="text-right font-mono">
+                                  {playerTotalBuyIn.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                 </TableCell>
-                              );
-                            })}
-                            <TableCell className="text-right flex items-center justify-end gap-1">
-                              <DialogTrigger asChild>
-                                  <Button variant="outline" size="sm" onClick={() => setPlayerForRebuy(player)}>
-                                    <Coins className="h-4 w-4" />
+                                {playerTotalChips.map((chip) => (
+                                    <TableCell key={chip.chipId} className="text-center font-mono">
+                                    {chip.count}
+                                    </TableCell>
+                                ))}
+                                <TableCell className="text-right flex items-center justify-end gap-1">
+                                  <DialogTrigger asChild>
+                                      <Button variant="outline" size="sm" onClick={() => setPlayerForDetails(player)}>
+                                        <FileText className="h-4 w-4" />
+                                      </Button>
+                                  </DialogTrigger>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => removePlayer(player.id)}
+                                  >
+                                    <Trash2 className="h-4 w-4 text-red-500" />
                                   </Button>
-                              </DialogTrigger>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => removePlayer(player.id)}
-                              >
-                                <Trash2 className="h-4 w-4 text-red-500" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))
+                                </TableCell>
+                              </TableRow>
+                           )
+                        })
                       )}
                     </TableBody>
                     {players.length > 0 && (
                       <UiTableFooter>
                          <TableRow className="bg-muted/50 hover:bg-muted font-bold">
                           <TableCell colSpan={2} className="text-right">
-                            Total de Fichas
+                            Total de Fichas na Mesa
                           </TableCell>
-                          {sortedChips.map((chip) => (
-                            <TableCell key={chip.id} className="text-center font-mono">
-                              {totalChipsByType[chip.id] || 0}
+                          {totalChipsOnTable.map((count, index) => (
+                            <TableCell key={sortedChips[index].id} className="text-center font-mono">
+                              {count}
                             </TableCell>
                           ))}
                           <TableCell></TableCell>
                         </TableRow>
                         <TableRow className="bg-muted/80 hover:bg-muted font-bold">
                           <TableCell colSpan={2} className="text-right">
-                            Valor Total
+                            Valor Total na Mesa
                           </TableCell>
-                          {sortedChips.map((chip) => (
-                            <TableCell key={chip.id} className="text-center font-mono">
-                              {totalValueByType[chip.id].toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          {totalValueOnTableByChip.map((value, index) => (
+                            <TableCell key={sortedChips[index].id} className="text-center font-mono">
+                              {value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                             </TableCell>
                           ))}
                            <TableCell className="text-right font-mono">
-                              {grandTotalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              {grandTotalValueOnTable.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                           </TableCell>
                         </TableRow>
                       </UiTableFooter>
@@ -657,3 +720,5 @@ const CashGameManager: React.FC = () => {
 };
 
 export default CashGameManager;
+
+    
