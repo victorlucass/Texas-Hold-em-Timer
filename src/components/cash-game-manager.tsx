@@ -65,72 +65,35 @@ const distributeChips = (buyIn: number, availableChips: Chip[]): { chipId: numbe
     const distribution: { chipId: number; count: number }[] = [];
     const sortedAvailableChips = [...availableChips].sort((a, b) => b.value - a.value);
 
-    // Estratégia: Alocar uma porcentagem do buy-in para cada tipo de ficha
-    // 40% para as duas fichas de menor valor, 60% para as de maior valor
-    const smallChipsCount = Math.min(2, sortedAvailableChips.length);
-    const smallChipPercent = smallChipsCount > 0 ? 0.4 / smallChipsCount : 0;
-    const largeChipPercent = sortedAvailableChips.length > smallChipsCount ? 0.6 / (sortedAvailableChips.length - smallChipsCount) : 0;
-
-    // Distribui uma parte para cada ficha, garantindo que todos recebam algo
     for (const chip of sortedAvailableChips) {
-      const isSmallChip = sortedAvailableChips.indexOf(chip) >= sortedAvailableChips.length - smallChipsCount;
-      const percentToAllocate = isSmallChip ? smallChipPercent : largeChipPercent;
-      let targetAmount = buyIn * percentToAllocate;
-      
-      let count = Math.floor(targetAmount / chip.value);
-      
-      // Garante pelo menos algumas fichas de menor valor
-      if (isSmallChip && count < 5 && buyIn >= 20) {
-        count = Math.min(Math.floor(remainingAmount/chip.value), 10);
-      }
-
-      if (count > 0) {
-        const amountToDecrement = count * chip.value;
-        if (remainingAmount - amountToDecrement >= 0) {
-          distribution.push({ chipId: chip.id, count });
-          remainingAmount -= amountToDecrement;
-        }
+      if (remainingAmount >= chip.value) {
+        const count = Math.floor(remainingAmount / chip.value);
+        distribution.push({ chipId: chip.id, count });
+        remainingAmount = parseFloat((remainingAmount - count * chip.value).toPrecision(10));
       }
     }
     
-    // Se ainda sobrar valor, preenche com as maiores fichas possíveis
-    for (const chip of sortedAvailableChips) {
-        if (remainingAmount < chip.value) continue;
-        const count = Math.floor(remainingAmount / chip.value);
-        if(count > 0) {
-            const existing = distribution.find(d => d.chipId === chip.id);
-            if(existing) {
-                existing.count += count;
-            } else {
-                distribution.push({ chipId: chip.id, count });
-            }
-            remainingAmount -= count * chip.value;
-        }
+    // Fallback for remaining small amounts
+    if (remainingAmount > 0) {
+      const smallestChip = sortedAvailableChips[sortedAvailableChips.length - 1];
+      if (smallestChip) {
+          const extraCount = Math.round(remainingAmount / smallestChip.value);
+          const existingSmallest = distribution.find(c => c.chipId === smallestChip.id);
+          if (existingSmallest) {
+            existingSmallest.count += extraCount;
+          } else {
+            distribution.push({chipId: smallestChip.id, count: extraCount});
+          }
+      }
     }
 
-    // Ajuste final com a menor ficha para valores quebrados
-    const smallestChip = sortedAvailableChips[sortedAvailableChips.length - 1];
-    if (remainingAmount > 0 && smallestChip && remainingAmount < smallestChip.value) {
-       remainingAmount = buyIn - distribution.reduce((sum, d) => {
-         const chip = availableChips.find(c => c.id === d.chipId);
-         return sum + (chip ? chip.value * d.count : 0);
-       }, 0)
-    }
+    // Ensure all chip types are present in the distribution, even if with 0 count initially
+    const finalDistribution: { chipId: number; count: number }[] = availableChips.map(chip => {
+        const found = distribution.find(d => d.chipId === chip.id);
+        return found || { chipId: chip.id, count: 0 };
+    });
 
-    if(remainingAmount > 0 && smallestChip) {
-        const count = Math.round(remainingAmount / smallestChip.value);
-        if(count > 0) {
-             const existing = distribution.find(d => d.chipId === smallestChip.id);
-             if(existing) {
-                 existing.count += count;
-             } else {
-                 distribution.push({ chipId: smallestChip.id, count });
-             }
-        }
-    }
-
-
-    return distribution;
+    return finalDistribution;
 };
 
 const CashGameManager: React.FC = () => {
