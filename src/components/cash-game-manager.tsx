@@ -98,8 +98,10 @@ const ChipIcon = ({ color, className }: { color: string; className?: string }) =
 const distributeChips = (buyIn: number, availableChips: Chip[]): { chipId: number; count: number }[] => {
     let remainingAmount = buyIn;
     
-    // Regra: Se buyIn <= 30, usar fichas < 10. Se > 30, usar todas.
-    const chipsToUse = buyIn <= 30 
+    // Regra: Se buyIn <= 30, usar fichas < 10. Se > 30, usar todas. Se > 50, usar 1 e 10.
+    const chipsToUse = buyIn > 50
+      ? availableChips.filter(c => c.value === 1 || c.value === 10)
+      : buyIn <= 30 
       ? availableChips.filter(c => c.value < 10) 
       : availableChips;
 
