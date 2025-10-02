@@ -97,7 +97,19 @@ const ChipIcon = ({ color, className }: { color: string; className?: string }) =
 
 const distributeChips = (buyIn: number, availableChips: Chip[]): { chipId: number; count: number }[] => {
     let remainingAmount = buyIn;
-    const sortedChips = [...availableChips].sort((a, b) => b.value - a.value);
+    
+    // Regra: Se buyIn <= 30, usar fichas < 10. Se > 30, usar todas.
+    const chipsToUse = buyIn <= 30 
+      ? availableChips.filter(c => c.value < 10) 
+      : availableChips;
+
+    const sortedChips = [...chipsToUse].sort((a, b) => b.value - a.value);
+    
+    // Se não houver fichas para o valor, retorna erro.
+    if(sortedChips.length === 0){
+        return [];
+    }
+
     const distribution: Map<number, number> = new Map(sortedChips.map(c => [c.id, 0]));
 
     // 1. Tenta alocar pelo menos uma de cada ficha para garantir variedade, se possível
@@ -184,7 +196,7 @@ const distributeChips = (buyIn: number, availableChips: Chip[]): { chipId: numbe
         return greedyDistribution;
     }
 
-    return sortedChips.map(chip => ({
+    return availableChips.map(chip => ({
         chipId: chip.id,
         count: distribution.get(chip.id) || 0,
     })).sort((a,b) => a.chipId - b.chipId);
