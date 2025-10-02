@@ -41,6 +41,8 @@ import {
   FileText,
   AlertCircle,
   CheckCircle2,
+  LogOut,
+  History,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -67,6 +69,16 @@ interface Player {
   transactions: PlayerTransaction[];
   finalChipCounts?: Map<number, number>;
 }
+
+interface CashedOutPlayer {
+  id: number;
+  name: string;
+  cashedOutAt: Date;
+  amountReceived: number;
+  chipCounts: Map<number, number>;
+  totalInvested: number;
+}
+
 
 const initialChips: Chip[] = [
   { id: 1, value: 0.25, color: '#22c55e', name: 'Verde' },
@@ -181,12 +193,18 @@ const CashGameManager: React.FC = () => {
   const { toast } = useToast();
   const [chips, setChips] = useState<Chip[]>(initialChips);
   const [players, setPlayers] = useState<Player[]>([]);
+  const [cashedOutPlayers, setCashedOutPlayers] = useState<CashedOutPlayer[]>([]);
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerBuyIn, setNewPlayerBuyIn] = useState('');
   const [isAddChipOpen, setIsAddChipOpen] = useState(false);
   const [newChip, setNewChip] = useState({ name: '', value: '', color: '#ffffff' });
   const [rebuyAmount, setRebuyAmount] = useState('');
   const [playerForDetails, setPlayerForDetails] = useState<Player | null>(null);
+
+  // Cash Out State
+  const [isCashOutOpen, setIsCashOutOpen] = useState(false);
+  const [playerToCashOut, setPlayerToCashOut] = useState<Player | null>(null);
+  const [cashOutChipCounts, setCashOutChipCounts] = useState<Map<number, number>>(new Map());
 
   const sortedChips = useMemo(() => [...chips].sort((a, b) => a.value - b.value), [chips]);
 
@@ -221,7 +239,7 @@ const CashGameManager: React.FC = () => {
     }
 
     const newPlayer: Player = {
-      id: players.length > 0 ? Math.max(...players.map(p => p.id)) + 1 : 1,
+      id: players.length > 0 ? Math.max(...players.map(p => p.id), ...cashedOutPlayers.map(p => p.id)) + 1 : 1,
       name: newPlayerName,
       transactions: [{
           id: 1,
@@ -239,7 +257,7 @@ const CashGameManager: React.FC = () => {
     setPlayers(prevPlayers => [...prevPlayers, newPlayer]);
     setNewPlayerName('');
     setNewPlayerBuyIn('');
-  }, [newPlayerName, newPlayerBuyIn, chips, players, toast]);
+  }, [newPlayerName, newPlayerBuyIn, chips, players, cashedOutPlayers, toast]);
 
   const handleRebuyOrAddon = useCallback(() => {
     if (!playerForDetails || !rebuyAmount) {
@@ -275,7 +293,6 @@ const CashGameManager: React.FC = () => {
         return p;
     }));
     
-    // Atualiza o state local para refletir a nova transação no modal
     setPlayerForDetails(prev => prev ? { ...prev, transactions: [...prev.transactions, newTransaction] } : null);
 
     toast({ title: 'Transação Concluída!', description: `R$${amount.toFixed(2)} adicionado para ${playerForDetails.name}.` });
@@ -393,9 +410,53 @@ const CashGameManager: React.FC = () => {
   const settlementDifference = useMemo(() => {
       return totalSettlementValue - totalBuyIn;
   }, [totalSettlementValue, totalBuyIn]);
+
+  const handleOpenCashOut = (player: Player) => {
+    setPlayerToCashOut(player);
+    setCashOutChipCounts(new Map());
+    setIsCashOutOpen(true);
+  };
+
+  const handleCashOutChipCountChange = (chipId: number, count: number) => {
+    setCashOutChipCounts(prev => new Map(prev).set(chipId, count));
+  };
+  
+  const cashOutValue = useMemo(() => {
+    return Array.from(cashOutChipCounts.entries()).reduce((acc, [chipId, count]) => {
+        const chip = sortedChips.find(c => c.id === chipId);
+        return acc + (chip ? chip.value * count : 0);
+    }, 0);
+  }, [cashOutChipCounts, sortedChips]);
+
+  const confirmCashOut = () => {
+    if (!playerToCashOut) return;
+
+    const totalInvested = playerToCashOut.transactions.reduce((acc, t) => acc + t.amount, 0);
+
+    const newCashedOutPlayer: CashedOutPlayer = {
+      id: playerToCashOut.id,
+      name: playerToCashOut.name,
+      cashedOutAt: new Date(),
+      amountReceived: cashOutValue,
+      chipCounts: cashOutChipCounts,
+      totalInvested: totalInvested,
+    };
+    
+    setCashedOutPlayers(prev => [...prev, newCashedOutPlayer]);
+    setPlayers(prev => prev.filter(p => p.id !== playerToCashOut.id));
+
+    toast({
+        title: "Cash Out Realizado!",
+        description: `${playerToCashOut.name} saiu da mesa com ${cashOutValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}.`
+    })
+
+    setIsCashOutOpen(false);
+    setPlayerToCashOut(null);
+  };
   
   const resetGame = () => {
       setPlayers([]);
+      setCashedOutPlayers([]);
       setChips(initialChips);
       setIsSettlementOpen(false);
       toast({ title: "Jogo Reiniciado!", description: "Tudo pronto para uma nova sessão."})
@@ -450,8 +511,8 @@ const CashGameManager: React.FC = () => {
             <Dialog onOpenChange={(isOpen) => { if(!isOpen) {setPlayerForDetails(null); setRebuyAmount('')} }}>
               <Card>
                 <CardHeader>
-                  <CardTitle>Jogadores e Fichas na Mesa</CardTitle>
-                  <CardDescription>Distribuição de fichas para cada jogador e totais.</CardDescription>
+                  <CardTitle>Jogadores na Mesa</CardTitle>
+                  <CardDescription>Distribuição de fichas e ações para cada jogador ativo.</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="overflow-x-auto">
@@ -502,6 +563,9 @@ const CashGameManager: React.FC = () => {
                                           <FileText className="h-4 w-4" />
                                         </Button>
                                     </DialogTrigger>
+                                    <Button variant="outline" size="sm" onClick={() => handleOpenCashOut(player)}>
+                                      <LogOut className="h-4 w-4" />
+                                    </Button>
                                     <Button
                                       variant="ghost"
                                       size="icon"
@@ -619,14 +683,55 @@ const CashGameManager: React.FC = () => {
               </DialogContent>
             </Dialog>
 
+             {cashedOutPlayers.length > 0 && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2"><History /> Histórico de Cash Outs</CardTitle>
+                        <CardDescription>Jogadores que já saíram da mesa.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        {cashedOutPlayers.map(p => {
+                            const balance = p.amountReceived - p.totalInvested;
+                            return (
+                            <div key={p.id} className="p-4 rounded-md border bg-muted/30">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <h4 className="font-bold">{p.name}</h4>
+                                        <p className="text-sm text-muted-foreground">Saiu às {p.cashedOutAt.toLocaleTimeString('pt-BR')}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="font-bold text-lg text-primary">{p.amountReceived.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
+                                        <p className={cn("text-sm font-bold", balance >= 0 ? "text-green-400" : "text-red-400")}>
+                                            Balanço: {balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                        </p>
+                                    </div>
+                                </div>
+                                <Separator className="my-2" />
+                                <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                                    {sortedChips.map(chip => {
+                                        const count = p.chipCounts.get(chip.id) || 0;
+                                        if (count === 0) return null;
+                                        return (
+                                        <div key={chip.id} className="flex items-center gap-1.5">
+                                            <ChipIcon color={chip.color} className="h-4 w-4" />
+                                            <span className="font-mono">{count}x</span>
+                                        </div>
+                                    )})}
+                                </div>
+                            </div>
+                        )})}
+                    </CardContent>
+                </Card>
+            )}
+
           </div>
 
           <div className="space-y-8">
             <Card className="bg-secondary">
               <CardHeader>
-                <CardTitle className="text-secondary-foreground">Banca Total</CardTitle>
+                <CardTitle className="text-secondary-foreground">Banca Ativa</CardTitle>
                 <CardDescription className="text-secondary-foreground/80">
-                  Valor total que entrou na mesa.
+                  Valor total que entrou na mesa (jogadores ativos).
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -899,6 +1004,45 @@ const CashGameManager: React.FC = () => {
           </div>
         </div>
       </div>
+
+       <Dialog open={isCashOutOpen} onOpenChange={setIsCashOutOpen}>
+            <DialogContent className="max-w-xl">
+                <DialogHeader>
+                    <DialogTitle>Cash Out de {playerToCashOut?.name}</DialogTitle>
+                    <DialogDescription>
+                        Insira a contagem final de fichas do jogador para calcular o valor a receber.
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                     {sortedChips.map(chip => (
+                        <div key={chip.id} className="grid grid-cols-3 items-center gap-4">
+                            <Label htmlFor={`cashout-chip-${chip.id}`} className="text-right flex items-center justify-end gap-2">
+                                <ChipIcon color={chip.color}/>
+                                Fichas de {chip.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </Label>
+                            <Input
+                                id={`cashout-chip-${chip.id}`}
+                                type="number"
+                                className="col-span-2"
+                                min="0"
+                                placeholder="Quantidade"
+                                value={cashOutChipCounts.get(chip.id) || ''}
+                                onChange={e => handleCashOutChipCountChange(chip.id, parseInt(e.target.value) || 0)}
+                            />
+                        </div>
+                     ))}
+                     <Separator />
+                     <div className="flex justify-between items-center text-lg font-bold">
+                        <Label>Valor a Receber:</Label>
+                        <span className="text-primary">{cashOutValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                     </div>
+                </div>
+                <DialogFooter>
+                    <Button variant="outline" onClick={() => setIsCashOutOpen(false)}>Cancelar</Button>
+                    <Button onClick={confirmCashOut}>Confirmar Cash Out</Button>
+                </DialogFooter>
+            </DialogContent>
+       </Dialog>
     </div>
   );
 };
