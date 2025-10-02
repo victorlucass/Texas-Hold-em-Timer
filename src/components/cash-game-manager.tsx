@@ -47,12 +47,14 @@ interface Player {
   chips: { chipId: number; count: number }[];
 }
 
-const ChipIcon = ({ color, className }: { color: string, className?: string }) => (
-  <div
-    className={cn("h-5 w-5 rounded-full border-2 border-white/20 inline-block", className)}
-    style={{ backgroundColor: color }}
-  ></div>
-);
+const ChipIcon = ({ color, className }: { color: string; className?: string }) => {
+  return (
+    <div
+      className={cn("h-5 w-5 rounded-full border-2 border-white/20 inline-block", className)}
+      style={{ backgroundColor: color }}
+    ></div>
+  );
+};
 
 const initialChips: Chip[] = [
   { id: 1, value: 0.25, color: '#22c55e', name: 'Verde' },
@@ -333,7 +335,7 @@ const CashGameManager: React.FC = () => {
               <CardHeader>
                 <CardTitle className="text-secondary-foreground">Banca Total</CardTitle>
                 <CardDescription className="text-secondary-foreground/80">Valor total que entrou na mesa.</CardDescription>
-              </CardHeader>
+              </Header>
               <CardContent>
                 <p className="text-4xl font-bold text-accent">R$ {totalBuyIn.toFixed(2)}</p>
               </CardContent>
@@ -379,7 +381,7 @@ const CashGameManager: React.FC = () => {
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2"><Calculator/> Acerto de Contas</CardTitle>
                     <CardDescription>Ao final do jogo, insira a contagem de fichas de cada jogador para calcular os resultados.</CardDescription>
-                </CardHeader>
+                </Header>
                 <CardContent>
                     <p className="text-sm text-muted-foreground text-center">Funcionalidade em desenvolvimento...</p>
                 </CardContent>
