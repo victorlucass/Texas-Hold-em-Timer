@@ -327,16 +327,16 @@ const CashGameManager: React.FC = () => {
   };
   
   const handleRemoveChip = (id: number) => {
-    if(players.length > 0) {
-      toast({ variant: 'destructive', title: 'Ação Bloqueada', description: 'Não é possível remover fichas com jogadores na mesa.' });
+    if(players.length > 0 || cashedOutPlayers.length > 0) {
+      toast({ variant: 'destructive', title: 'Ação Bloqueada', description: 'Não é possível remover fichas com um jogo em andamento.' });
       return;
     }
     setChips(chips.filter(c => c.id !== id));
   };
 
   const handleResetChips = () => {
-    if(players.length > 0) {
-      toast({ variant: 'destructive', title: 'Ação Bloqueada', description: 'Não é possível resetar as fichas com jogadores na mesa.' });
+    if(players.length > 0 || cashedOutPlayers.length > 0) {
+      toast({ variant: 'destructive', title: 'Ação Bloqueada', description: 'Não é possível resetar as fichas com um jogo em andamento.' });
       return;
     }
     setChips(initialChips);
@@ -421,6 +421,36 @@ const CashGameManager: React.FC = () => {
       return totalSettlementValue - totalSessionBuyIn;
   }, [totalSettlementValue, totalSessionBuyIn]);
 
+  const settlementChipsInPlay = useMemo(() => {
+    // Total de fichas distribuídas em toda a sessão
+    const totalDistributed = new Map<number, number>();
+    [...players, ...cashedOutPlayers].forEach(p => {
+        p.transactions.forEach(t => {
+            t.chips.forEach(c => {
+                totalDistributed.set(c.chipId, (totalDistributed.get(c.chipId) || 0) + c.count);
+            });
+        });
+    });
+
+    // Total de fichas devolvidas por jogadores que fizeram cash out
+    const totalCashedOutChips = new Map<number, number>();
+    cashedOutPlayers.forEach(p => {
+        p.chipCounts.forEach((count, chipId) => {
+            totalCashedOutChips.set(chipId, (totalCashedOutChips.get(chipId) || 0) + count);
+        });
+    });
+    
+    // Fichas restantes na mesa = Distribuídas - Devolvidas
+    const remainingChips = new Map<number, number>();
+    sortedChips.forEach(chip => {
+        const distributed = totalDistributed.get(chip.id) || 0;
+        const cashedOut = totalCashedOutChips.get(chip.id) || 0;
+        remainingChips.set(chip.id, distributed - cashedOut);
+    });
+    
+    return sortedChips.map(chip => ({ chip, count: remainingChips.get(chip.id) || 0 }));
+  }, [players, cashedOutPlayers, sortedChips]);
+
   const handleOpenCashOut = (player: Player) => {
     setPlayerToCashOut(player);
     setCashOutChipCounts(new Map());
@@ -468,7 +498,8 @@ const CashGameManager: React.FC = () => {
   const resetGame = () => {
       setPlayers([]);
       setCashedOutPlayers([]);
-      setChips(initialChips);
+      setNewPlayerName('');
+      setNewPlayerBuyIn('');
       setIsSettlementOpen(false);
       toast({ title: "Jogo Reiniciado!", description: "Tudo pronto para uma nova sessão."})
   }
@@ -547,7 +578,7 @@ const CashGameManager: React.FC = () => {
                         {players.length === 0 ? (
                           <TableRow>
                             <TableCell
-                              colSpan={3 + sortedChips.length}
+                              colSpan={4 + sortedChips.length}
                               className="text-center text-muted-foreground h-24"
                             >
                               Nenhum jogador na mesa ainda.
@@ -577,13 +608,27 @@ const CashGameManager: React.FC = () => {
                                     <Button variant="outline" size="sm" onClick={() => handleOpenCashOut(player)}>
                                       <LogOut className="h-4 w-4" />
                                     </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      onClick={() => removePlayer(player.id)}
-                                    >
-                                      <Trash2 className="h-4 w-4 text-red-500" />
-                                    </Button>
+                                    <Dialog>
+                                      <DialogTrigger asChild>
+                                          <Button variant="ghost" size="icon">
+                                            <Trash2 className="h-4 w-4 text-red-500" />
+                                          </Button>
+                                      </DialogTrigger>
+                                      <DialogContent className="max-w-md">
+                                        <DialogHeader>
+                                          <DialogTitle>Remover {player.name}?</DialogTitle>
+                                          <DialogDescription>
+                                              Tem certeza que deseja remover este jogador? Todas as suas transações serão perdidas. Esta ação não é um cash out.
+                                          </DialogDescription>
+                                        </DialogHeader>
+                                        <DialogFooter>
+                                          <DialogClose asChild>
+                                            <Button variant="outline">Cancelar</Button>
+                                          </DialogClose>
+                                          <Button variant="destructive" onClick={() => removePlayer(player.id)}>Sim, Remover</Button>
+                                        </DialogFooter>
+                                      </DialogContent>
+                                    </Dialog>
                                   </TableCell>
                                 </TableRow>
                              )
@@ -777,7 +822,7 @@ const CashGameManager: React.FC = () => {
                           )
                         }
                         className="w-24 flex-1"
-                        disabled={players.length > 0}
+                        disabled={players.length > 0 || cashedOutPlayers.length > 0}
                       />
                       <div className="flex items-center">
                         <span className="mr-2 text-sm">R$</span>
@@ -795,10 +840,10 @@ const CashGameManager: React.FC = () => {
                             )
                           }
                           className="w-20"
-                          disabled={players.length > 0}
+                          disabled={players.length > 0 || cashedOutPlayers.length > 0}
                         />
                       </div>
-                       <Button variant="ghost" size="icon" disabled={players.length > 0} onClick={() => handleRemoveChip(chip.id)}>
+                       <Button variant="ghost" size="icon" disabled={players.length > 0 || cashedOutPlayers.length > 0} onClick={() => handleRemoveChip(chip.id)}>
                           <Trash2 className="h-4 w-4 text-red-500/80" />
                         </Button>
                     </div>
@@ -808,7 +853,7 @@ const CashGameManager: React.FC = () => {
               <CardFooter className="flex-col gap-2">
                 <Dialog open={isAddChipOpen} onOpenChange={setIsAddChipOpen}>
                   <DialogTrigger asChild>
-                     <Button variant="outline" className="w-full" disabled={players.length > 0}>
+                     <Button variant="outline" className="w-full" disabled={players.length > 0 || cashedOutPlayers.length > 0}>
                         Adicionar Ficha
                       </Button>
                   </DialogTrigger>
@@ -838,7 +883,7 @@ const CashGameManager: React.FC = () => {
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
-                <Button variant="ghost" className="w-full" onClick={handleResetChips} disabled={players.length > 0}>
+                <Button variant="ghost" className="w-full" onClick={handleResetChips} disabled={players.length > 0 || cashedOutPlayers.length > 0}>
                   Resetar Fichas
                 </Button>
               </CardFooter>
@@ -876,9 +921,9 @@ const CashGameManager: React.FC = () => {
                     <div className="overflow-y-auto pr-4 -mr-4 h-full">
 
                        <div className="p-4 rounded-md bg-muted/50 border border-border mb-6">
-                            <h3 className="text-lg font-bold text-foreground mb-2">Total de Fichas em Jogo</h3>
+                            <h3 className="text-lg font-bold text-foreground mb-2">Total de Fichas em Jogo (Restantes)</h3>
                             <div className="flex flex-wrap gap-x-6 gap-y-2">
-                                {totalChipsOnTable.map(({chip, count}) => (
+                                {settlementChipsInPlay.map(({chip, count}) => (
                                     <div key={chip.id} className="flex items-center gap-2">
                                         <ChipIcon color={chip.color} />
                                         <span className="font-bold">{chip.name}:</span>
@@ -996,7 +1041,7 @@ const CashGameManager: React.FC = () => {
                                 <DialogHeader>
                                     <DialogTitle>Confirmar Finalização</DialogTitle>
                                     <DialogDescription>
-                                        Tem certeza que deseja finalizar a sessão? Todos os jogadores e transações serão apagados permanentemente.
+                                        Tem certeza que deseja finalizar a sessão? Todos os jogadores e transações serão apagados permanentemente. Esta ação não pode ser desfeita.
                                     </DialogDescription>
                                 </DialogHeader>
                                 <DialogFooter>
@@ -1059,3 +1104,5 @@ const CashGameManager: React.FC = () => {
 };
 
 export default CashGameManager;
+
+    
