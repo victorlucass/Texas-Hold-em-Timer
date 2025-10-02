@@ -47,8 +47,6 @@ import { cn } from '@/lib/utils';
 import { Label } from './ui/label';
 import { Separator } from './ui/separator';
 
-// Tipos, Constantes e Funções de Utilidade movidos para fora do componente
-
 interface Chip {
   id: number;
   value: number;
@@ -92,7 +90,7 @@ const distributeChips = (buyIn: number, availableChips: Chip[]): { chipId: numbe
     // 1. Tenta alocar pelo menos uma de cada ficha para garantir variedade, se possível
     const smallChipsFirst = [...sortedChips].sort((a, b) => a.value - b.value);
     for (const chip of smallChipsFirst) {
-        if (remainingAmount >= chip.value * Math.max(2, (1 / (chip.value / buyIn))/2) && chip.value < (buyIn/4)) { 
+        if (remainingAmount >= chip.value * Math.max(2, (1 / (chip.value / buyIn))/2) && chip.value < (buyIn/4)) {
             const count = 1;
             distribution.set(chip.id, (distribution.get(chip.id) || 0) + count);
             remainingAmount = parseFloat((remainingAmount - chip.value * count).toFixed(2));
@@ -110,9 +108,9 @@ const distributeChips = (buyIn: number, availableChips: Chip[]): { chipId: numbe
         else allocationPercentage = 0.1;
 
         let targetValueForChip = remainingAmount * allocationPercentage;
-        
+
         let count = Math.floor(targetValueForChip / chip.value);
-        
+
         // Tenta arredondar para o múltiplo de 5 mais próximo se for ficha de centavos
         if(chip.value < 1 && count > 5) {
             count = Math.round(count / 5) * 5;
@@ -126,18 +124,18 @@ const distributeChips = (buyIn: number, availableChips: Chip[]): { chipId: numbe
           }
         }
     }
-    
+
     // 3. Preenche o restante com a lógica "greedy" para garantir que o valor bata
     for (const chip of sortedChips) {
       if (remainingAmount < chip.value) continue;
-      
+
       const count = Math.floor(remainingAmount / chip.value);
       if (count > 0) {
         distribution.set(chip.id, (distribution.get(chip.id) || 0) + count);
         remainingAmount = parseFloat((remainingAmount - count * chip.value).toFixed(2));
       }
     }
-    
+
     // 4. Se ainda sobrar, tenta adicionar nas menores fichas
     if (remainingAmount > 0.01) {
         for (const chip of smallChipsFirst) {
@@ -156,7 +154,7 @@ const distributeChips = (buyIn: number, availableChips: Chip[]): { chipId: numbe
         const chip = availableChips.find(c => c.id === dist.chipId);
         return acc + (chip ? chip.value * dist.count : 0);
     }, 0);
-    
+
     if (Math.abs(totalDistributedValue - buyIn) > 0.01) {
         console.warn("Complex distribution failed. Value mismatch.", {totalDistributedValue, buyIn});
         // Fallback para a distribuição simples
@@ -179,8 +177,6 @@ const distributeChips = (buyIn: number, availableChips: Chip[]): { chipId: numbe
     })).sort((a,b) => a.chipId - b.chipId);
 };
 
-
-// O Componente Principal
 const CashGameManager: React.FC = () => {
   const { toast } = useToast();
   const [chips, setChips] = useState<Chip[]>(initialChips);
@@ -378,7 +374,7 @@ const CashGameManager: React.FC = () => {
     }));
   };
 
-  const getPlayerSettlementData = (player: Player) => {
+  const getPlayerSettlementData = useCallback((player: Player) => {
     const totalInvested = player.transactions.reduce((acc, t) => acc + t.amount, 0);
     const finalValue = Array.from(player.finalChipCounts || []).reduce((acc, [chipId, count]) => {
         const chip = sortedChips.find(c => c.id === chipId);
@@ -386,46 +382,17 @@ const CashGameManager: React.FC = () => {
     }, 0);
     const balance = finalValue - totalInvested;
     return { totalInvested, finalValue, balance };
-  };
+  }, [sortedChips]);
 
   const totalSettlementValue = useMemo(() => {
     return players.reduce((total, player) => {
         return total + getPlayerSettlementData(player).finalValue;
     }, 0);
-  }, [players, sortedChips]);
+  }, [players, getPlayerSettlementData]);
 
   const settlementDifference = useMemo(() => {
       return totalSettlementValue - totalBuyIn;
   }, [totalSettlementValue, totalBuyIn]);
-
-  const getSettlementTransactions = () => {
-    const playersWithBalance = players.map(p => {
-        const { balance } = getPlayerSettlementData(p);
-        return { name: p.name, balance };
-    });
-
-    const debtors = playersWithBalance.filter(p => p.balance < 0).map(p => ({...p})).sort((a,b) => a.balance - b.balance);
-    const creditors = playersWithBalance.filter(p => p.balance > 0).map(p => ({...p})).sort((a,b) => b.balance - a.balance);
-    const transactions = [];
-
-    let i = 0, j = 0;
-    while(i < debtors.length && j < creditors.length) {
-        const debtor = debtors[i];
-        const creditor = creditors[j];
-        const amount = Math.min(-debtor.balance, creditor.balance);
-
-        if (amount > 0.01) {
-            transactions.push(`${debtor.name} paga R$${amount.toFixed(2).replace('.', ',')} para ${creditor.name}.`);
-        }
-
-        debtor.balance += amount;
-        creditor.balance -= amount;
-
-        if (Math.abs(debtor.balance) < 0.01) i++;
-        if (Math.abs(creditor.balance) < 0.01) j++;
-    }
-    return transactions;
-  }
   
   const resetGame = () => {
       setPlayers([]);
@@ -433,7 +400,6 @@ const CashGameManager: React.FC = () => {
       setIsSettlementOpen(false);
       toast({ title: "Jogo Reiniciado!", description: "Tudo pronto para uma nova sessão."})
   }
-
 
   return (
     <div className="min-h-screen w-full bg-background p-4 md:p-8">
@@ -500,18 +466,15 @@ const CashGameManager: React.FC = () => {
                             ))}
                         </TableRow>
                         <TableRow className="bg-muted/80 hover:bg-muted font-bold">
-                            <TableCell colSpan={2} className="text-right">Valor Total</TableCell>
-                            {getPlayerTotalChips(playerForDetails).map((chip) => {
-                                const chipInfo = sortedChips.find(c => c.id === chip.chipId);
-                                return (
-                                <TableCell key={chip.chipId} className="text-center font-mono">
-                                    {(chip.count * (chipInfo?.value || 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                </TableCell>
-                                )
-                            })}
+                            <TableCell colSpan={2} className="text-right">Valor Total Investido</TableCell>
+                            <TableCell colSpan={sortedChips.length + 1} className="text-left font-mono">
+                                {playerForDetails.transactions.reduce((acc, t) => acc + t.amount, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </TableCell>
                         </TableRow>
                     </UiTableFooter>
                 </Table>
+
+                <Separator className='my-4'/>
 
                 <div className="grid gap-4 py-4">
                   <div className="grid grid-cols-4 items-center gap-4">
@@ -682,7 +645,7 @@ const CashGameManager: React.FC = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {chips.map((chip) => (
+                  {sortedChips.map((chip) => (
                     <div key={chip.id} className="flex items-center gap-2">
                       <ChipIcon color={chip.color} />
                       <Input
@@ -840,7 +803,7 @@ const CashGameManager: React.FC = () => {
                         
                         <Separator className="my-6" />
 
-                        {Math.abs(settlementDifference) < 0.01 ? (
+                        {Math.abs(settlementDifference) < 0.01 && settlementDifference !== 0 ? (
                             <div className="p-4 rounded-md bg-green-900/50 border border-green-500">
                                 <div className="flex items-center gap-2">
                                     <CheckCircle2 className="text-green-400" />
@@ -848,11 +811,17 @@ const CashGameManager: React.FC = () => {
                                 </div>
                                 <p className="text-green-400/80 mt-1">O valor total contado corresponde ao valor total que entrou na mesa.</p>
                                 <div className="mt-4">
-                                    <h4 className="font-bold mb-2">Transferências Sugeridas:</h4>
-                                    <ul className="space-y-1 list-disc list-inside">
-                                        {getSettlementTransactions().map((t, i) => (
-                                            <li key={i}>{t}</li>
-                                        ))}
+                                    <h4 className="font-bold mb-2">Resultado Final:</h4>
+                                     <ul className="space-y-1 list-disc list-inside">
+                                        {players.map(player => {
+                                            const { balance } = getPlayerSettlementData(player);
+                                            if (balance > 0) {
+                                                return <li key={player.id}>{player.name} recebe <span className="font-bold text-green-400">{balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>.</li>
+                                            } else if (balance < 0) {
+                                                return <li key={player.id}>{player.name} deve <span className="font-bold text-red-400">{Math.abs(balance).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>.</li>
+                                            }
+                                            return <li key={player.id}>{player.name} sai zerado.</li>
+                                        })}
                                     </ul>
                                 </div>
                             </div>
@@ -902,7 +871,6 @@ const CashGameManager: React.FC = () => {
             </Card>
           </div>
         </div>
-
         </Dialog>
       </div>
     </div>
