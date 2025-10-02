@@ -200,11 +200,11 @@ const CashGameManager: React.FC = () => {
       return;
     }
     const buyInValue = parseFloat(newPlayerBuyIn);
-    if (isNaN(buyInValue) || buyInValue <= 0 || buyInValue % 5 !== 0) {
+    if (isNaN(buyInValue) || buyInValue <= 0) {
       toast({
         variant: 'destructive',
         title: 'Erro de Buy-in',
-        description: 'O valor do buy-in deve ser um número positivo e múltiplo de 5.',
+        description: 'O valor do buy-in deve ser um número positivo.',
       });
       return;
     }
@@ -247,8 +247,8 @@ const CashGameManager: React.FC = () => {
         return;
     }
     const amount = parseFloat(rebuyAmount);
-    if(isNaN(amount) || amount <= 0 || amount % 5 !== 0) {
-        toast({ variant: 'destructive', title: 'Valor Inválido', description: 'O valor deve ser um número positivo e múltiplo de 5.' });
+    if(isNaN(amount) || amount <= 0) {
+        toast({ variant: 'destructive', title: 'Valor Inválido', description: 'O valor deve ser um número positivo.' });
         return;
     }
     
@@ -769,7 +769,7 @@ const CashGameManager: React.FC = () => {
                                         </TableHead>
                                     ))}
                                     <TableHead className="text-right">Investido (R$)</TableHead>
-                                    <TableHead className="text-right font-bold text-foreground">Valor a Receber (R$)</TableHead>
+                                    <TableHead className="text-right font-bold text-foreground">Valor Contado (R$)</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -807,13 +807,33 @@ const CashGameManager: React.FC = () => {
                                 </div>
                                 <p className="text-green-400/80 mt-1">O valor total contado corresponde ao valor total que entrou na mesa.</p>
                                 <div className="mt-4">
-                                    <h4 className="font-bold mb-2">Pagamentos Finais:</h4>
-                                     <ul className="space-y-1 list-disc list-inside">
-                                        {players.map(player => {
-                                            const { finalValue } = getPlayerSettlementData(player);
-                                            return <li key={player.id}>{player.name} recebe <span className="font-bold text-green-400">{finalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>.</li>
-                                        })}
-                                    </ul>
+                                    <h4 className="font-bold mb-2 text-green-300">Pagamentos Finais:</h4>
+                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                                      <div>
+                                          <p className="font-bold border-b pb-1 mb-2">Valor a Receber</p>
+                                          <ul className="space-y-1 list-disc list-inside">
+                                              {players.map(player => {
+                                                  const { finalValue } = getPlayerSettlementData(player);
+                                                  return <li key={player.id}>{player.name} recebe <span className="font-bold text-green-400">{finalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>.</li>
+                                              })}
+                                          </ul>
+                                      </div>
+                                      <div>
+                                          <p className="font-bold border-b pb-1 mb-2">Lucro / Prejuízo</p>
+                                           <ul className="space-y-1 list-disc list-inside">
+                                              {players.map(player => {
+                                                  const { balance } = getPlayerSettlementData(player);
+                                                  return (
+                                                    <li key={player.id}>
+                                                      {player.name}: <span className={cn("font-bold", balance >= 0 ? "text-green-400" : "text-red-400")}>
+                                                        {balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                      </span>
+                                                    </li>
+                                                  )
+                                              })}
+                                          </ul>
+                                      </div>
+                                    </div>
                                 </div>
                             </div>
                         ) : (
@@ -830,9 +850,9 @@ const CashGameManager: React.FC = () => {
                     </div>
                     <DialogFooter className="mt-4 gap-2 sm:gap-0">
                         <div className="flex-1 text-center md:text-right font-mono bg-muted p-2 rounded-md">
-                           Total Entrou: <span className="font-bold">{totalBuyIn.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                           TOTAL ENTRADO: <span className="font-bold">{totalBuyIn.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                            <br/>
-                           Total Contado: <span className="font-bold">{totalSettlementValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                           TOTAL CONTADO: <span className="font-bold">{totalSettlementValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                            <br/>
                            Diferença: <span className={cn("font-bold", Math.abs(settlementDifference) >= 0.01 ? "text-destructive" : "text-green-400")}>{settlementDifference.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                         </div>
