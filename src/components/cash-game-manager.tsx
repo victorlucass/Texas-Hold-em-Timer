@@ -18,6 +18,7 @@ import {
   TableHead,
   TableBody,
   TableCell,
+  TableFooter as UiTableFooter
 } from '@/components/ui/table';
 import {
   PlusCircle,
@@ -30,7 +31,6 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { Separator } from '@/components/ui/separator';
 import Link from 'next/link';
 
 interface Chip {
@@ -47,9 +47,9 @@ interface Player {
   chips: { chipId: number; count: number }[];
 }
 
-const ChipIcon = ({ color }: { color: string }) => (
+const ChipIcon = ({ color, className }: { color: string, className?: string }) => (
   <div
-    className="h-6 w-6 rounded-full border-2 border-white/20 inline-block mr-2"
+    className={cn("h-5 w-5 rounded-full border-2 border-white/20 inline-block", className)}
     style={{ backgroundColor: color }}
   ></div>
 );
@@ -68,47 +68,78 @@ const CashGameManager: React.FC = () => {
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerBuyIn, setNewPlayerBuyIn] = useState('');
 
+  const sortedChips = useMemo(() => [...chips].sort((a,b) => a.value - b.value), [chips]);
+
   const distributeChips = useCallback((buyIn: number, availableChips: Chip[]): { chipId: number; count: number }[] => {
     let remainingAmount = buyIn;
     const distribution: { chipId: number; count: number }[] = [];
-    const sortedChips = [...availableChips].sort((a, b) => b.value - a.value);
-  
-    // Tenta distribuir as fichas de forma balanceada
-    for (const chip of sortedChips) {
-      if (remainingAmount <= 0) break;
+    const sortedAvailableChips = [...availableChips].sort((a, b) => b.value - a.value);
+
+    // Estratégia: Alocar uma porcentagem do buy-in para cada tipo de ficha
+    // 40% para as duas fichas de menor valor, 60% para as de maior valor
+    const smallChipsCount = Math.min(2, sortedAvailableChips.length);
+    const smallChipPercent = smallChipsCount > 0 ? 0.4 / smallChipsCount : 0;
+    const largeChipPercent = sortedAvailableChips.length > smallChipsCount ? 0.6 / (sortedAvailableChips.length - smallChipsCount) : 0;
+
+    // Distribui uma parte para cada ficha, garantindo que todos recebam algo
+    for (const chip of sortedAvailableChips) {
+      const isSmallChip = sortedAvailableChips.indexOf(chip) >= sortedAvailableChips.length - smallChipsCount;
+      const percentToAllocate = isSmallChip ? smallChipPercent : largeChipPercent;
+      let targetAmount = buyIn * percentToAllocate;
       
-      // Heurística simples: tenta dar pelo menos umas 10-20 fichas de valores menores
-      // e menos fichas de valores maiores.
-      const targetCount = chip.value < 1 ? 20 : (chip.value < 10 ? 10 : 5);
-      let count = Math.min(targetCount, Math.floor(remainingAmount / chip.value));
+      let count = Math.floor(targetAmount / chip.value);
       
+      // Garante pelo menos algumas fichas de menor valor
+      if (isSmallChip && count < 5 && buyIn >= 20) {
+        count = Math.min(Math.floor(remainingAmount/chip.value), 10);
+      }
+
       if (count > 0) {
-        distribution.push({ chipId: chip.id, count });
-        remainingAmount -= count * chip.value;
+        const amountToDecrement = count * chip.value;
+        if (remainingAmount - amountToDecrement >= 0) {
+          distribution.push({ chipId: chip.id, count });
+          remainingAmount -= amountToDecrement;
+        }
       }
     }
     
     // Se ainda sobrar valor, preenche com as maiores fichas possíveis
-    remainingAmount = buyIn - distribution.reduce((sum, d) => {
-        const chip = availableChips.find(c => c.id === d.chipId);
-        return sum + (chip ? chip.value * d.count : 0);
-    }, 0);
-
-    for (const chip of sortedChips) {
-        if (remainingAmount <= 0.001) break; // Lida com imprecisões de float
-        const existingEntry = distribution.find(d => d.chipId === chip.id);
-        const canAddCount = Math.floor(remainingAmount / chip.value);
-
-        if(canAddCount > 0) {
-            if(existingEntry) {
-                existingEntry.count += canAddCount;
+    for (const chip of sortedAvailableChips) {
+        if (remainingAmount < chip.value) continue;
+        const count = Math.floor(remainingAmount / chip.value);
+        if(count > 0) {
+            const existing = distribution.find(d => d.chipId === chip.id);
+            if(existing) {
+                existing.count += count;
             } else {
-                distribution.push({chipId: chip.id, count: canAddCount})
+                distribution.push({ chipId: chip.id, count });
             }
-            remainingAmount -= canAddCount * chip.value;
+            remainingAmount -= count * chip.value;
         }
     }
-  
+
+    // Ajuste final com a menor ficha para valores quebrados
+    const smallestChip = sortedAvailableChips[sortedAvailableChips.length - 1];
+    if (remainingAmount > 0 && smallestChip && remainingAmount < smallestChip.value) {
+       remainingAmount = buyIn - distribution.reduce((sum, d) => {
+         const chip = availableChips.find(c => c.id === d.chipId);
+         return sum + (chip ? chip.value * d.count : 0);
+       }, 0)
+    }
+
+    if(remainingAmount > 0 && smallestChip) {
+        const count = Math.round(remainingAmount / smallestChip.value);
+        if(count > 0) {
+             const existing = distribution.find(d => d.chipId === smallestChip.id);
+             if(existing) {
+                 existing.count += count;
+             } else {
+                 distribution.push({ chipId: smallestChip.id, count });
+             }
+        }
+    }
+
+
     return distribution;
   }, []);
 
@@ -137,11 +168,11 @@ const CashGameManager: React.FC = () => {
         return sum + (chip ? chip.value * dist.count : 0);
     }, 0);
 
-    if (Math.abs(totalDistributedValue - buyInValue) > 0.01) {
+    if (Math.abs(totalDistributedValue - buyInValue) > 0.01) { // Tolerância para floats
         toast({
             variant: "destructive",
             title: "Erro na distribuição",
-            description: `Não foi possível distribuir as fichas para o valor de R$${buyInValue.toFixed(2)}. Tente um valor diferente ou ajuste as fichas disponíveis.`
+            description: `Não foi possível distribuir R$${buyInValue.toFixed(2)} com as fichas atuais. O valor distribuído foi R$${totalDistributedValue.toFixed(2)}.`
         })
         return;
     }
@@ -153,14 +184,9 @@ const CashGameManager: React.FC = () => {
       chips: chipDistribution,
     };
     
-    const distributionText = chipDistribution.map(d => {
-        const chip = chips.find(c => c.id === d.chipId);
-        return `${d.count}x ${chip?.name || 'Ficha'}`;
-    }).join(', ');
-    
     toast({
         title: 'Jogador Adicionado!',
-        description: `${newPlayer.name} entrou na mesa com R$${buyInValue.toFixed(2)}. Fichas: ${distributionText}`
+        description: `${newPlayer.name} entrou na mesa com R$${buyInValue.toFixed(2)}.`
     })
 
     setPlayers([...players, newPlayer]);
@@ -175,6 +201,21 @@ const CashGameManager: React.FC = () => {
   const totalBuyIn = useMemo(() => {
     return players.reduce((acc, player) => acc + player.buyIn, 0);
   }, [players]);
+
+  const totalChipsByType = useMemo(() => {
+    const totals: {[key: number]: number} = {};
+    for(const chip of sortedChips) {
+        totals[chip.id] = 0;
+    }
+    for(const player of players) {
+        for(const playerChip of player.chips) {
+            if(totals[playerChip.chipId] !== undefined) {
+                totals[playerChip.chipId] += playerChip.count;
+            }
+        }
+    }
+    return totals;
+  }, [players, sortedChips]);
 
   return (
     <div className="min-h-screen w-full bg-background p-4 md:p-8">
@@ -223,26 +264,39 @@ const CashGameManager: React.FC = () => {
 
             <Card>
               <CardHeader>
-                <CardTitle>Jogadores na Mesa</CardTitle>
+                <CardTitle>Jogadores e Fichas na Mesa</CardTitle>
+                <CardDescription>Distribuição de fichas para cada jogador.</CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Nome</TableHead>
-                      <TableHead>Buy-in</TableHead>
+                      <TableHead>Jogador</TableHead>
+                      <TableHead className="text-center">Buy-in</TableHead>
+                      {sortedChips.map(chip => (
+                         <TableHead key={chip.id} className="text-center">
+                            <div className="flex items-center justify-center gap-2">
+                                <ChipIcon color={chip.color} />
+                                <span>{chip.value.toFixed(2)}</span>
+                            </div>
+                         </TableHead>
+                      ))}
                       <TableHead className="text-right">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {players.length === 0 ? (
                         <TableRow>
-                            <TableCell colSpan={3} className="text-center text-muted-foreground">Nenhum jogador na mesa ainda.</TableCell>
+                            <TableCell colSpan={4 + sortedChips.length} className="text-center text-muted-foreground h-24">Nenhum jogador na mesa ainda.</TableCell>
                         </TableRow>
                     ) : players.map((player) => (
                       <TableRow key={player.id}>
                         <TableCell className="font-medium">{player.name}</TableCell>
-                        <TableCell>R$ {player.buyIn.toFixed(2)}</TableCell>
+                        <TableCell className="text-center">R$ {player.buyIn.toFixed(2)}</TableCell>
+                        {sortedChips.map(chip => {
+                            const pChip = player.chips.find(c => c.chipId === chip.id);
+                            return <TableCell key={chip.id} className="text-center font-mono">{pChip?.count || 0}</TableCell>
+                        })}
                         <TableCell className="text-right">
                           <Button
                             variant="ghost"
@@ -255,6 +309,19 @@ const CashGameManager: React.FC = () => {
                       </TableRow>
                     ))}
                   </TableBody>
+                  {players.length > 0 && (
+                    <UiTableFooter>
+                        <TableRow className="bg-muted/50 hover:bg-muted">
+                            <TableCell colSpan={2} className="font-bold text-right">Total de Fichas</TableCell>
+                            {sortedChips.map(chip => (
+                                <TableCell key={chip.id} className="text-center font-bold font-mono">
+                                    {totalChipsByType[chip.id] || 0}
+                                </TableCell>
+                            ))}
+                            <TableCell></TableCell>
+                        </TableRow>
+                    </UiTableFooter>
+                  )}
                 </Table>
               </CardContent>
             </Card>
@@ -276,7 +343,7 @@ const CashGameManager: React.FC = () => {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Palette/> Fichas do Jogo</CardTitle>
                 <CardDescription>Configure os valores e cores das fichas.</CardDescription>
-              </CardHeader>
+              </Header>
               <CardContent>
                  <div className="space-y-4">
                     {chips.map(chip => (
@@ -292,6 +359,7 @@ const CashGameManager: React.FC = () => {
                                <span className="mr-2">R$</span>
                                <Input 
                                    type="number" 
+                                   step="0.01"
                                    value={chip.value}
                                    onChange={(e) => setChips(chips.map(c => c.id === chip.id ? {...c, value: parseFloat(e.target.value) || 0} : c))}
                                    className="w-20"
