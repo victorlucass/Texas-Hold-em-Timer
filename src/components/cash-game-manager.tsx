@@ -752,7 +752,7 @@ const CashGameManager: React.FC = () => {
                      <DialogHeader>
                         <DialogTitle>Acerto de Contas Final</DialogTitle>
                         <DialogDescription>
-                            Insira a contagem final de fichas para cada jogador. O sistema calculará automaticamente os valores e o balanço.
+                            Insira a contagem final de fichas para cada jogador. O sistema calculará automaticamente os valores a serem pagos.
                         </DialogDescription>
                     </DialogHeader>
                     <div className="overflow-y-auto pr-4 -mr-4 h-full">
@@ -769,13 +769,12 @@ const CashGameManager: React.FC = () => {
                                         </TableHead>
                                     ))}
                                     <TableHead className="text-right">Investido (R$)</TableHead>
-                                    <TableHead className="text-right">Contado (R$)</TableHead>
-                                    <TableHead className="text-right">Balanço (R$)</TableHead>
+                                    <TableHead className="text-right font-bold text-foreground">Valor a Receber (R$)</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {players.map(player => {
-                                    const { totalInvested, finalValue, balance } = getPlayerSettlementData(player);
+                                    const { totalInvested, finalValue } = getPlayerSettlementData(player);
                                     return (
                                         <TableRow key={player.id}>
                                             <TableCell className="font-medium">{player.name}</TableCell>
@@ -791,10 +790,7 @@ const CashGameManager: React.FC = () => {
                                                 </TableCell>
                                             ))}
                                             <TableCell className="text-right font-mono">{totalInvested.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</TableCell>
-                                            <TableCell className="text-right font-mono">{finalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</TableCell>
-                                            <TableCell className={cn("text-right font-mono font-bold", balance > 0 ? "text-green-400" : balance < 0 ? "text-red-400" : "")}>
-                                                {balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                            </TableCell>
+                                            <TableCell className="text-right font-mono font-bold text-foreground">{finalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</TableCell>
                                         </TableRow>
                                     )
                                 })}
@@ -811,16 +807,11 @@ const CashGameManager: React.FC = () => {
                                 </div>
                                 <p className="text-green-400/80 mt-1">O valor total contado corresponde ao valor total que entrou na mesa.</p>
                                 <div className="mt-4">
-                                    <h4 className="font-bold mb-2">Resultado Final:</h4>
+                                    <h4 className="font-bold mb-2">Pagamentos Finais:</h4>
                                      <ul className="space-y-1 list-disc list-inside">
                                         {players.map(player => {
-                                            const { balance } = getPlayerSettlementData(player);
-                                            if (balance > 0) {
-                                                return <li key={player.id}>{player.name} recebe <span className="font-bold text-green-400">{balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>.</li>
-                                            } else if (balance < 0) {
-                                                return <li key={player.id}>{player.name} deve <span className="font-bold text-red-400">{Math.abs(balance).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>.</li>
-                                            }
-                                            return <li key={player.id}>{player.name} sai zerado.</li>
+                                            const { finalValue } = getPlayerSettlementData(player);
+                                            return <li key={player.id}>{player.name} recebe <span className="font-bold text-green-400">{finalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>.</li>
                                         })}
                                     </ul>
                                 </div>
